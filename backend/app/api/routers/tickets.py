@@ -12,10 +12,17 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 @router.get("", response_model=list[TicketOut])
 def list_tickets(
     status: str | None = None,
+    q: str | None = None,
     db: Session = Depends(get_db),
     current=Depends(get_current_user),
 ):
-    return tools.list_tickets(db, role=current["role"], user_id=UUID(current["user_id"]), status=status)
+    return tools.list_tickets(
+        db,
+        role=current["role"],
+        user_id=UUID(current["user_id"]),
+        status=status,
+        query=q,
+    )
 
 @router.post("", response_model=TicketOut)
 def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):

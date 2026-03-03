@@ -2,6 +2,10 @@ import uuid
 from sqlalchemy import Column, Text, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
+
+# vector type for pgvector embeddings; install pgvector in requirements
+from pgvector.sqlalchemy import Vector
+
 from app.db.base import Base
 
 class Ticket(Base):
@@ -15,6 +19,15 @@ class Ticket(Base):
 
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=True)
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
+
+    escalated_manager_id1 = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=True)
+    escalated_manager_id2 = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=True)
+    escalated_manager1_at = Column(DateTime(timezone=True), nullable=True)
+    escalated_manager2_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, onupdate=func.now())
+
+    # combined embedding of ticket title/description and any final resolution text
+    embedding = Column(Vector(1536))

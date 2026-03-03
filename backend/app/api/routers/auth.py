@@ -11,7 +11,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 HARDCODED = {
     "saakshi@support.ai": {"password": "password123", "display_name": "Saakshi Gupta", "role": "REQUESTER"},
-    "anjali@support.ai": {"password": "password123", "display_name": "Anjali Sharma", "role": "SUPPORT"},
+    "anjali@support.ai": {"password": "password123", "display_name": "Anjali Mamidi", "role": "SUPPORT"},
+    "subbu@support.ai": {"password": "password123", "display_name": "Subbu", "role": "SUPPORT_MANAGER"},
 }
 
 class LoginRequest(BaseModel):

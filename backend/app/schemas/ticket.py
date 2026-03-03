@@ -14,8 +14,16 @@ class TicketOut(BaseModel):
     status: str
     created_by: Optional[UUID]
     assigned_to: Optional[UUID]
+    assigned_at: Optional[datetime] = None
+    escalated_manager_id1: Optional[UUID] = None
+    escalated_manager_id2: Optional[UUID] = None
+    escalated_manager1_at: Optional[datetime] = None
+    escalated_manager2_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    last_email_at: Optional[datetime] = None
+    next_update_due_at: Optional[datetime] = None
+    sla_status: Optional[str] = None
 
     class Config:
         from_attributes = True
