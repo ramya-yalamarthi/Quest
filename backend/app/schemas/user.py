@@ -7,6 +7,7 @@ class UserOut(BaseModel):
     email: str
     display_name: str
     role: str
+    manager_id: UUID | None = None
     created_at: datetime
 
     class Config:

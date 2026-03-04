@@ -27,3 +27,6 @@ uvicorn==0.41.0
 pgvector==0.4.2  # required for embedding columns
 openai
 sendgrid==6.11.0
+sentence-transformers==3.1.1
+ddgs>=0.3.0  # reliable web search (renamed from duckduckgo-search)
+requests>=2.31.0  # HTTP client for API calls

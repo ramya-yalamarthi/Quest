@@ -7,6 +7,7 @@ import json
 import queue
 import threading
 from pydantic import BaseModel
+import logging
 
 from app.deps import get_db
 from app.auth.deps import get_current_user
@@ -16,6 +17,7 @@ from app.schemas.resolution import ResolutionOut
 
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
+logger = logging.getLogger(__name__)
 
 
 def support_only(current):
@@ -37,6 +39,13 @@ class SimilarResolution(BaseModel):
     confidence_score: Optional[float] = None
 
 
+class WebSolution(BaseModel):
+    title: str
+    url: str
+    summary: Optional[str] = None
+    steps: list[str]
+
+
 class AnalyzeTicketResponse(BaseModel):
     ticket_id: UUID
     root_cause: str
@@ -46,6 +55,7 @@ class AnalyzeTicketResponse(BaseModel):
     draft_email_subject: str
     draft_email_body: str
     similar_resolutions: list[SimilarResolution]
+    web_solutions: list[WebSolution]
 
 
 class ApproveEmailRequest(BaseModel):
@@ -87,6 +97,15 @@ def build_analyze_response(result: dict) -> AnalyzeTicketResponse:
                 confidence_score=r.confidence_score,
             )
             for r in result["insights"]["similar_resolutions"]
+        ],
+        web_solutions=[
+            WebSolution(
+                title=item["title"],
+                url=item["url"],
+                summary=item.get("summary"),
+                steps=item.get("steps", []),
+            )
+            for item in result["insights"].get("web_solutions", [])
         ],
     )
 
@@ -148,7 +167,8 @@ def analyze_ticket_stream(
             )
             q.put(("done", result))
         except Exception as e:
-            q.put(("error", str(e)))
+            logger.exception("Analyze ticket failed", extra={"ticket_id": str(ticket_id)})
+            q.put(("error", "Analysis failed"))
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
@@ -163,7 +183,7 @@ def analyze_ticket_stream(
                 data = response.model_dump(mode="json")
                 yield f"event: done\ndata: {json.dumps(data)}\n\n"
                 break
-            else:
+            elif kind == "error":
                 yield f"event: error\ndata: {payload}\n\n"
                 break
 
@@ -220,6 +240,43 @@ def update_draft(
         "subject": email.subject,
         "body": email.body,
     }
+
+
+class ImproveEmailRequest(BaseModel):
+    subject: str
+    body: str
+
+
+class ImproveEmailResponse(BaseModel):
+    subject: str
+    body: str
+
+
+@router.post("/improve-email", response_model=ImproveEmailResponse)
+def improve_email(
+    payload: ImproveEmailRequest,
+    current=Depends(get_current_user),
+):
+    """Improve a user-written email draft with AI assistance."""
+    logger.info(f"Improving email - Subject: {payload.subject[:50]}, Body length: {len(payload.body)}")
+    support_only(current)
+    
+    from app.utils.llm import improve_email_draft
+    
+    try:
+        improved_subject, improved_body = improve_email_draft(
+            subject=payload.subject,
+            body=payload.body
+        )
+        logger.info(f"Email improved successfully - New subject: {improved_subject[:50]}")
+        
+        return {
+            "subject": improved_subject,
+            "body": improved_body,
+        }
+    except Exception as e:
+        logger.error(f"Error improving email: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to improve email: {str(e)}")
 
 
 @router.post("/log-resolution", response_model=ResolutionOut)

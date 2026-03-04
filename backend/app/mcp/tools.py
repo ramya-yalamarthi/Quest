@@ -4,6 +4,7 @@ from sqlalchemy import func, or_, cast, Text
 from app.db.models.user import User
 from app.db.models.ticket import Ticket
 from app.db.models.email import Email
+from app.config import SLA_UPDATE_HOURS
 from app.utils.embeddings import get_embedding
 
 ALLOWED_TICKET_STATUSES = {"NEW", "ASSIGNED", "RESOLVED"}
@@ -75,16 +76,15 @@ def list_tickets(
     last_email_map = {ticket_id: created_at for ticket_id, created_at in last_email_rows}
 
     now = datetime.now(timezone.utc)
-    manager_ids = [
-        row[0]
-        for row in (
-            db.query(User.user_id)
-            .filter(User.role == "MANAGER")
-            .order_by(User.created_at.asc())
-            .limit(2)
-            .all()
-        )
-    ]
+    support_managers = {
+        row.user_id for row in db.query(User.user_id).filter(User.role == "SUPPORT_MANAGER").all()
+    }
+    managers_by_support = {
+        row.user_id: row.manager_id
+        for row in db.query(User.user_id, User.manager_id)
+        .filter(User.role == "SUPPORT")
+        .all()
+    }
     needs_commit = False
 
     for t in tickets:
@@ -102,20 +102,26 @@ def list_tickets(
             setattr(t, "sla_status", "pending")
             continue
 
-        next_due = base_time + timedelta(hours=2)
+        next_due = base_time + timedelta(hours=SLA_UPDATE_HOURS)
         setattr(t, "next_update_due_at", next_due)
 
         overdue = now > next_due
         setattr(t, "sla_status", "overdue" if overdue else "on_time")
 
-        if overdue and manager_ids:
-            if len(manager_ids) >= 1 and not t.escalated_manager_id1:
-                t.escalated_manager_id1 = manager_ids[0]
+        manager_base_time = t.escalated_manager1_at or t.escalated_manager2_at
+        if manager_base_time:
+            manager_due = manager_base_time + timedelta(hours=SLA_UPDATE_HOURS)
+            setattr(t, "manager_next_update_due_at", manager_due)
+            setattr(t, "manager_sla_status", "overdue" if now > manager_due else "on_time")
+        else:
+            setattr(t, "manager_next_update_due_at", None)
+            setattr(t, "manager_sla_status", None)
+
+        if overdue:
+            manager_id = managers_by_support.get(t.assigned_to)
+            if manager_id and manager_id in support_managers and not t.escalated_manager_id1:
+                t.escalated_manager_id1 = manager_id
                 t.escalated_manager1_at = now
-                needs_commit = True
-            if len(manager_ids) >= 2 and not t.escalated_manager_id2:
-                t.escalated_manager_id2 = manager_ids[1]
-                t.escalated_manager2_at = now
                 needs_commit = True
 
     if needs_commit:

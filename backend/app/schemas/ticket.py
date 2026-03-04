@@ -24,6 +24,8 @@ class TicketOut(BaseModel):
     last_email_at: Optional[datetime] = None
     next_update_due_at: Optional[datetime] = None
     sla_status: Optional[str] = None
+    manager_next_update_due_at: Optional[datetime] = None
+    manager_sla_status: Optional[str] = None
 
     class Config:
         from_attributes = True

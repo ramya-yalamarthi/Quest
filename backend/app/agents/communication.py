@@ -76,6 +76,9 @@ class CommCoach:
 
     def send_email(self, email: Email) -> None:
         """Send the email using SendGrid."""
+        # Note: Email sending is currently disabled for testing
+        # The email will be marked as approved but not actually sent
+        
         ticket = self.db.query(Ticket).filter(Ticket.ticket_id == email.ticket_id).first()
         if not ticket:
             raise ValueError("ticket not found for email")
@@ -89,19 +92,25 @@ class CommCoach:
         if not recipient:
             raise ValueError("recipient email not found")
 
-        sendgrid_key = os.environ.get("SENDGRID_API_KEY")
-        sendgrid_from = os.environ.get("SENDGRID_FROM")
-        if not sendgrid_key or not sendgrid_from:
-            raise ValueError("SendGrid configuration is incomplete")
-
-        message = Mail(
-            from_email=sendgrid_from,
-            to_emails=recipient,
-            subject=email.subject,
-            plain_text_content=email.body,
-        )
-        sg = SendGridAPIClient(sendgrid_key)
-        sg.send(message)
+        # Email sending disabled - uncomment below to enable SendGrid integration
+        # sendgrid_key = os.environ.get("SENDGRID_API_KEY")
+        # sendgrid_from = os.environ.get("SENDGRID_FROM")
+        # if not sendgrid_key or not sendgrid_from:
+        #     raise ValueError("SendGrid configuration is incomplete")
+        #
+        # message = Mail(
+        #     from_email=sendgrid_from,
+        #     to_emails=recipient,
+        #     subject=email.subject,
+        #     plain_text_content=email.body,
+        # )
+        # sg = SendGridAPIClient(sendgrid_key)
+        # sg.send(message)
+        
+        # For now, just log that the email would be sent
+        print(f"[Email Service] Email approved for ticket {ticket.ticket_id}")
+        print(f"[Email Service] Recipient: {recipient}")
+        print(f"[Email Service] Subject: {email.subject}")
 
     def log_resolution(
         self,

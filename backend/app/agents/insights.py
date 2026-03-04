@@ -1,4 +1,5 @@
 from typing import List, Optional
+import os
 from uuid import UUID
 from sqlalchemy.orm import Session
 
@@ -6,6 +7,8 @@ from app.db.models.ticket import Ticket
 from app.db.models.resolution import Resolution
 from app.utils.embeddings import get_embedding
 from app.utils.llm import summarize_root_cause_with_llm
+from app.agents.web_solutions_agent import WebSolutionsAgent
+import logging
 
 
 class InsightsBuddy:
@@ -19,6 +22,8 @@ class InsightsBuddy:
 
     def __init__(self, db: Session):
         self.db = db
+        self._logger = logging.getLogger(__name__)
+        self._web_solutions_agent = WebSolutionsAgent()
 
     def build_ticket_embedding(self, ticket: Ticket) -> List[float]:
         # combine all text that should be searchable
@@ -140,6 +145,11 @@ class InsightsBuddy:
         # ... code here to log to ai_audit_log table if desired ...
 
         if progress:
+            progress("Searching the web for similar discussions")
+
+        web_solutions = self.find_web_solutions(ticket.title, ticket.description)
+
+        if progress:
             progress("Summarizing what worked and what did not")
 
         root_cause, recommendation = summarize_root_cause_with_llm(
@@ -151,4 +161,27 @@ class InsightsBuddy:
             "similar_tickets": similar_tickets,
             "root_cause": root_cause,
             "recommendation": recommendation,
+            "web_solutions": web_solutions,
         }
+
+    def find_web_solutions(
+        self,
+        title: str,
+        description: str,
+    ) -> List[dict]:
+        """
+        Find web-based solutions by searching across public websites.
+        Delegates to WebSolutionsAgent for comprehensive web search.
+        """
+        try:
+            from app.config import WEB_SEARCH_MAX_RESULTS
+            solutions = self._web_solutions_agent.find_solutions(
+                title,
+                description,
+                max_results=WEB_SEARCH_MAX_RESULTS
+            )
+            self._logger.info(f"Found {len(solutions)} web solutions")
+            return solutions
+        except Exception as e:
+            self._logger.error(f"Error finding web solutions: {e}", exc_info=True)
+            return []

@@ -1,6 +1,9 @@
 import os
 from typing import Tuple, List, Optional, Dict
 from openai import AzureOpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class LLMClient:
@@ -152,3 +155,175 @@ def draft_email_from_summary(summary: str, sender_name: str = "Support Team") ->
         temperature=0.3,
         max_tokens=512,
     )
+
+
+def summarize_web_solution_steps(
+    ticket_text: str,
+    page_text: str,
+    max_steps: int = 6,
+) -> List[str]:
+    if not page_text.strip():
+        return []
+    trimmed = page_text.strip()
+    if len(trimmed) > 4000:
+        trimmed = trimmed[:4000]
+    prompt = (
+        "You are a technical support assistant. "
+        "You are given a support ticket and text scraped from a Microsoft help page. "
+        "Use ONLY the page text. Do not add any new steps. "
+        "If the page does not describe clear steps that resolve the ticket, reply with: Not enough data.\n\n"
+        "Return step-by-step actions in this exact format:\n"
+        "Steps:\n- step 1\n- step 2\n\n"
+        "Keep steps short and actionable. Max "
+        + str(max_steps)
+        + " steps.\n\n"
+        "TICKET:\n"
+        + ticket_text
+        + "\n\nPAGE TEXT:\n"
+        + trimmed
+    )
+    text = _client.complete(
+        system_prompt="",
+        user_prompt=prompt,
+        temperature=0.2,
+        max_tokens=384,
+    )
+
+    steps: List[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower().startswith("steps:"):
+            continue
+        if stripped.startswith("-"):
+            step = stripped.lstrip("- ").strip()
+            if step:
+                steps.append(step)
+            continue
+        if stripped.lower().startswith("not enough data"):
+            return []
+
+    return steps[:max_steps]
+
+
+def summarize_steps_from_snippet(
+    ticket_text: str,
+    snippet: str,
+    max_steps: int = 3,
+) -> List[str]:
+    if not snippet.strip():
+        return []
+    prompt = (
+        "You are a technical support assistant. "
+        "You are given a support ticket and a short search snippet from a web result. "
+        "Use ONLY the snippet. Do not add any new steps. "
+        "If the snippet does not describe clear steps, reply with: Not enough data.\n\n"
+        "Return step-by-step actions in this exact format:\n"
+        "Steps:\n- step 1\n- step 2\n\n"
+        "Keep steps short and actionable. Max "
+        + str(max_steps)
+        + " steps.\n\n"
+        "TICKET:\n"
+        + ticket_text
+        + "\n\nSNIPPET:\n"
+        + snippet
+    )
+    text = _client.complete(
+        system_prompt="",
+        user_prompt=prompt,
+        temperature=0.2,
+        max_tokens=256,
+    )
+
+    steps: List[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower().startswith("steps:"):
+            continue
+        if stripped.startswith("-"):
+            step = stripped.lstrip("- ").strip()
+            if step:
+                steps.append(step)
+            continue
+        if stripped.lower().startswith("not enough data"):
+            return []
+
+    return steps[:max_steps]
+
+
+def improve_email_draft(subject: str, body: str) -> Tuple[str, str]:
+    """
+    Improve a user-written email draft by correcting grammar, adding proper
+    greeting/signature, and ensuring professional tone.
+    
+    Returns:
+        Tuple of (improved_subject, improved_body)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"improve_email_draft called - Subject: {subject[:50]}, Body length: {len(body)}")
+    
+    client = LLMClient()
+    
+    system_prompt = """You are a professional support engineer helping customers resolve their technical problems and tickets.
+Your task is to improve email drafts by:
+1. Correcting grammar, spelling, and punctuation errors
+2. Adding appropriate professional greeting if missing (use "Hi" or "Good morning/afternoon" - do NOT use "team" or group greetings)
+3. Adding appropriate professional closing and signature if missing
+4. Using a helpful, friendly, and professional tone appropriate for customer support communication
+5. Maintaining the original intent and key information
+6. Ensuring the tone reflects your role as a support engineer assisting a customer
+7. If no subject is provided or subject is empty, create an appropriate subject line based on the email body
+
+Keep improvements minimal - only fix what needs fixing. The tone should be helpful and supportive, not overly formal or corporate."""
+
+    user_prompt = f"""Improve the following email draft from a support engineer to a customer:
+
+SUBJECT: {subject if subject else "[No subject provided - please suggest one]"}
+
+BODY:
+{body}
+
+Please provide:
+1. An improved subject line (if empty, create an appropriate one based on the email content)
+2. An improved email body with proper greeting (Hi/Good morning - no "team"), helpful support engineer tone, and professional closing
+
+Format your response EXACTLY as:
+SUBJECT: <improved subject>
+BODY:
+<improved body>"""
+
+    logger.info("Calling LLM for email improvement...")
+    response = client.complete(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=0.3,
+        max_tokens=1000,
+    )
+    logger.info(f"LLM response received, length: {len(response)}")
+    
+    # Parse response
+    improved_subject = subject
+    improved_body = body
+    
+    lines = response.split("\n")
+    in_body = False
+    body_lines = []
+    
+    for line in lines:
+        if line.strip().startswith("SUBJECT:"):
+            improved_subject = line.replace("SUBJECT:", "").strip()
+        elif line.strip().startswith("BODY:"):
+            in_body = True
+        elif in_body:
+            body_lines.append(line)
+    
+    if body_lines:
+        improved_body = "\n".join(body_lines).strip()
+    
+    logger.info(f"Email parsing complete - Improved subject: {improved_subject[:50]}")
+    return improved_subject, improved_body

@@ -25,6 +25,8 @@ export default function App() {
   const [analysis, setAnalysis] = useState(null);
   const [draft, setDraft] = useState(null);
   const [draftOriginal, setDraftOriginal] = useState(null);
+  const [emailTab, setEmailTab] = useState("ai"); // "ai" or "custom"
+  const [customDraft, setCustomDraft] = useState({ subject: "", body: "" });
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState(null);
   const [loadingStep, setLoadingStep] = useState("");
@@ -65,6 +67,58 @@ export default function App() {
     }, 300);
     return () => clearTimeout(timer);
   }, [token, ticketSearch]);
+
+  // Auto-load cached analysis when ticket is selected
+  useEffect(() => {
+    if (!selected || !token) return;
+    
+    // Fetch cached analysis for the selected ticket
+    fetch(`${API_BASE}/tickets/${selected.ticket_id}/analysis`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch cached analysis');
+        return res.json();
+      })
+      .then(data => {
+        if (data) {
+          // If cached analysis exists, populate the UI
+          setAnalysis({
+            root_cause: data.root_cause,
+            recommendation: data.recommendation,
+            web_solutions: data.web_solutions,
+            similar_count: 0,
+            similar_resolutions: []
+          });
+          
+          if (data.draft_email_id) {
+            setDraft({
+              email_id: data.draft_email_id,
+              subject: data.draft_email_subject,
+              body: data.draft_email_body
+            });
+            setDraftOriginal({
+              subject: data.draft_email_subject,
+              body: data.draft_email_body
+            });
+          }
+        }
+      })
+      .catch(err => {
+        // Silently fail if no cached analysis - user can click "Analyze Ticket"
+        console.debug('No cached analysis found:', err);
+      });
+  }, [selected, token]);
+
+  // Auto-clear message after 2 seconds
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => {
+        setMessage("");
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -107,6 +161,7 @@ export default function App() {
     "Finding similar tickets",
     "Fetching historical resolutions",
     "Ranking resolutions by similarity",
+    "Searching Microsoft resources",
     "Summarizing what worked and what did not",
     "Drafting customer email"
   ];
@@ -165,7 +220,6 @@ export default function App() {
     });
 
     stream.addEventListener("error", () => {
-      setMessage("Analysis failed");
       setBusy(false);
       setActivity(null);
       stream.close();
@@ -181,9 +235,81 @@ export default function App() {
     try {
       await updateDraft(token, draft.email_id, draft.subject, draft.body);
       await approveEmail(token, draft.email_id);
-      setMessage("Email sent and logged.");
+      setMessage("Email sent successfully.");
     } catch (err) {
-      setMessage(err.message || "Send failed");
+      setMessage(err.message || "Failed to approve email. Please try again.");
+    } finally {
+      setBusy(false);
+      setActivity(null);
+    }
+  };
+
+  const handleImproveEmail = async () => {
+    if (!customDraft.body) {
+      setMessage("Please enter email body");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch(`${API_BASE}/mcp/improve-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          subject: customDraft.subject,
+          body: customDraft.body,
+        }),
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Failed to improve email: ${errorText}`);
+      }
+      const data = await res.json();
+      setCustomDraft({
+        subject: data.subject,
+        body: data.body,
+      });
+      setMessage("Email improved successfully!");
+    } catch (err) {
+      setMessage(err.message || "Failed to improve email. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSendCustom = async () => {
+    if (!customDraft.subject || !customDraft.body || !selected) return;
+    setBusy(true);
+    setActivity("send");
+    setMessage("");
+    try {
+      // Create a draft email from the custom draft
+      const draftRes = await fetch(`${API_BASE}/mcp/draft-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ticket_id: selected.ticket_id,
+          subject: customDraft.subject,
+          body: customDraft.body,
+        }),
+      });
+      if (!draftRes.ok) throw new Error("Failed to create draft");
+      const draftData = await draftRes.json();
+      
+      // Approve and send the email
+      await approveEmail(token, draftData.email_id);
+      setMessage("Email sent successfully.");
+      
+      // Clear custom draft after sending
+      setCustomDraft({ subject: "", body: "" });
+    } catch (err) {
+      setMessage(err.message || "Failed to send email. Please try again.");
     } finally {
       setBusy(false);
       setActivity(null);
@@ -319,20 +445,20 @@ export default function App() {
 
       <main className="grid">
         <div className="stack">
+          <label className="search-field">
+            Search tickets
+            <input
+              type="text"
+              value={ticketSearch}
+              onChange={(e) => setTicketSearch(e.target.value)}
+              placeholder="Search by ID, title, or description"
+            />
+          </label>
           <section className="panel">
             <div className="panel-header">
               <h2>Assigned Tickets</h2>
               <span className="pill">{assignedTickets.length}</span>
             </div>
-            <label className="search-field">
-              Search tickets
-              <input
-                type="text"
-                value={ticketSearch}
-                onChange={(e) => setTicketSearch(e.target.value)}
-                placeholder="Search by ID, title, or description"
-              />
-            </label>
             {assignedTickets.length === 0 ? (
               <div className="empty">No tickets assigned to you.</div>
             ) : (
@@ -345,13 +471,16 @@ export default function App() {
                     }
                     onClick={() => {
                       setSelected(ticket);
+                      // Clear current state, auto-load will fetch cached analysis
                       setAnalysis(null);
                       setDraft(null);
                       setDraftOriginal(null);
                     }}
                   >
                     <div className="title">{ticket.title}</div>
-                    <div className="meta">{ticket.ticket_id}</div>
+                    <div className="meta">
+                      {ticket.ticket_id} • {formatRelative(ticket.last_email_at)}
+                    </div>
                     {ticket.sla_status && ticket.sla_status !== "pending" ? (
                       <div
                         className={`sla-flag ${
@@ -372,7 +501,7 @@ export default function App() {
           {user?.role === "SUPPORT_MANAGER" ? (
             <section className="panel">
               <div className="panel-header">
-                <h2>Manager Queue</h2>
+                <h2>Escalated Tickets</h2>
                 <span className="pill">{managerQueue.length}</span>
               </div>
               {managerQueue.length === 0 ? (
@@ -387,20 +516,23 @@ export default function App() {
                       }
                       onClick={() => {
                         setSelected(ticket);
+                        // Clear current state, auto-load will fetch cached analysis
                         setAnalysis(null);
                         setDraft(null);
                         setDraftOriginal(null);
                       }}
                     >
                       <div className="title">{ticket.title}</div>
-                      <div className="meta">{ticket.ticket_id}</div>
-                      {ticket.sla_status && ticket.sla_status !== "pending" ? (
+                      <div className="meta">
+                        {ticket.ticket_id} • {formatDue(ticket.manager_next_update_due_at)}
+                      </div>
+                      {ticket.manager_sla_status ? (
                         <div
                           className={`sla-flag ${
-                            ticket.sla_status === "overdue" ? "overdue" : "on-time"
+                            ticket.manager_sla_status === "overdue" ? "overdue" : "on-time"
                           }`}
                         >
-                          {ticket.sla_status === "overdue"
+                          {ticket.manager_sla_status === "overdue"
                             ? "Overdue"
                             : "On time"}
                         </div>
@@ -413,7 +545,7 @@ export default function App() {
           ) : null}
         </div>
 
-        <section className="panel">
+        <section className="panel detail-panel">
           {!selected ? (
             <div className="empty">Select a ticket to view details.</div>
           ) : (
@@ -432,10 +564,22 @@ export default function App() {
                     <div className="status-chip">
                       <span className="status-label">Next update</span>
                       <span className="status-value">
-                        {formatDue(selected.next_update_due_at)}
+                        {user?.role === "SUPPORT_MANAGER" && selected.manager_next_update_due_at
+                          ? formatDue(selected.manager_next_update_due_at)
+                          : formatDue(selected.next_update_due_at)}
                       </span>
                     </div>
-                    {selected.sla_status && selected.sla_status !== "pending" ? (
+                    {user?.role === "SUPPORT_MANAGER" && selected.manager_sla_status ? (
+                      <div
+                        className={`sla-flag ${
+                          selected.manager_sla_status === "overdue" ? "overdue" : "on-time"
+                        }`}
+                      >
+                        {selected.manager_sla_status === "overdue"
+                          ? "Overdue"
+                          : "On time"}
+                      </div>
+                    ) : selected.sla_status && selected.sla_status !== "pending" ? (
                       <div
                         className={`sla-flag ${
                           selected.sla_status === "overdue" ? "overdue" : "on-time"
@@ -456,7 +600,9 @@ export default function App() {
                   >
                     {busy && activity === "analysis"
                       ? "Running..."
-                      : "Check Past Resolutions"}
+                      : analysis
+                      ? "Refresh Analysis"
+                      : "Analyze Ticket"}
                   </button>
                   {busy && activity === "analysis" ? (
                     <div className="loading-inline">
@@ -470,7 +616,7 @@ export default function App() {
               {analysis ? (
                 <div className="analysis">
                   <div className="analysis-grid">
-                    <div className="card">
+                    <div className="card accent-mint">
                       <h3>Possible Root Cause</h3>
                       <div
                         className="rich-text"
@@ -479,7 +625,7 @@ export default function App() {
                         }}
                       />
                     </div>
-                    <div className="card">
+                    <div className="card accent-sun">
                       <h3>Recommended Steps</h3>
                       <div
                         className="rich-text"
@@ -490,7 +636,40 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="card">
+                  <div className="card bordered-card web-solutions">
+                    <h3>Web Solutions</h3>
+                    {analysis.web_solutions?.length ? (
+                      <div className="web-solution-list">
+                        {analysis.web_solutions.map((item, index) => (
+                          <div key={`${item.url}-${index}`} className="web-solution-item">
+                            <div className="web-solution-title">{item.title}</div>
+                            <a className="web-solution-link" href={item.url} target="_blank" rel="noreferrer">
+                              {item.url}
+                            </a>
+                            {item.summary && (
+                              <div className="web-solution-summary">{item.summary}</div>
+                            )}
+                            {item.steps?.length > 0 && (
+                              <ol className="web-solution-steps">
+                                {item.steps.map((step, stepIndex) => (
+                                  <li key={`${item.url}-step-${stepIndex}`}>{step}</li>
+                                ))}
+                              </ol>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="empty">
+                        No web solutions found.
+                        <div className="empty-note">
+                          Try analyzing the ticket again or check your search configuration.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="card bordered-card">
                     <h3>Similar Tickets</h3>
                     {analysis.similar_resolutions?.length ? (
                       <ul className="similar-list">
@@ -509,59 +688,133 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="card">
+                  <div className="card bordered-card">
                     <div className="email-header">
                       <h3>Draft Email</h3>
-                      <div className="email-actions">
+                      <div className="email-tabs">
                         <button
-                          className="ghost"
-                          onClick={() =>
-                            setDraft({ ...draft, subject: "", body: "" })
-                          }
+                          className={emailTab === "ai" ? "tab-active" : "tab-inactive"}
+                          onClick={() => setEmailTab("ai")}
                         >
-                          Clear
+                          AI-Generated
                         </button>
                         <button
-                          className="ghost"
-                          onClick={() => setDraft({ ...draftOriginal, email_id: draft.email_id })}
-                          disabled={!draftOriginal}
+                          className={emailTab === "custom" ? "tab-active" : "tab-inactive"}
+                          onClick={() => setEmailTab("custom")}
                         >
-                          Reset to draft
+                          Draft Own Email
                         </button>
                       </div>
                     </div>
-                    <label>
-                      Subject
-                      <input
-                        type="text"
-                        value={draft?.subject || ""}
-                        onChange={(e) =>
-                          setDraft({ ...draft, subject: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Body
-                      <textarea
-                        rows="8"
-                        value={draft?.body || ""}
-                        onChange={(e) =>
-                          setDraft({ ...draft, body: e.target.value })
-                        }
-                      />
-                    </label>
-                    <div className="email-preview">
-                      <div className="preview-title">Preview</div>
-                      <div
-                        className="preview-body"
-                        dangerouslySetInnerHTML={{
-                          __html: renderPreview(draft?.body || "")
-                        }}
-                      />
-                    </div>
-                    <button className="primary" onClick={handleSend} disabled={busy}>
-                      {busy ? "Sending..." : "Send Email"}
-                    </button>
+
+                    {emailTab === "ai" ? (
+                      <>
+                        <div className="email-actions">
+                          <button
+                            className="ghost"
+                            onClick={() =>
+                              setDraft({ ...draft, subject: "", body: "" })
+                            }
+                          >
+                            Clear
+                          </button>
+                          <button
+                            className="ghost"
+                            onClick={() => setDraft({ ...draftOriginal, email_id: draft.email_id })}
+                            disabled={!draftOriginal}
+                          >
+                            Reset to draft
+                          </button>
+                        </div>
+                        <label>
+                          Subject
+                          <input
+                            type="text"
+                            value={draft?.subject || ""}
+                            onChange={(e) =>
+                              setDraft({ ...draft, subject: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Body
+                          <textarea
+                            rows="8"
+                            value={draft?.body || ""}
+                            onChange={(e) =>
+                              setDraft({ ...draft, body: e.target.value })
+                            }
+                          />
+                        </label>
+                        <div className="email-preview">
+                          <div className="preview-title">Preview</div>
+                          <div
+                            className="preview-body"
+                            dangerouslySetInnerHTML={{
+                              __html: renderPreview(draft?.body || "")
+                            }}
+                          />
+                        </div>
+                        <button className="primary" onClick={handleSend} disabled={busy}>
+                          {busy ? "Sending..." : "Send Email"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="email-actions">
+                          <button
+                            className="ghost"
+                            onClick={() =>
+                              setCustomDraft({ subject: "", body: "" })
+                            }
+                          >
+                            Clear
+                          </button>
+                          <button
+                            className="primary"
+                            onClick={handleImproveEmail}
+                            disabled={busy || !customDraft.body}
+                            title={!customDraft.body ? "Please enter email body" : ""}
+                          >
+                            {busy ? "Improving..." : "Improve with AI"}
+                          </button>
+                        </div>
+                        <label>
+                          Subject
+                          <input
+                            type="text"
+                            value={customDraft.subject}
+                            onChange={(e) =>
+                              setCustomDraft({ ...customDraft, subject: e.target.value })
+                            }
+                            placeholder="Enter email subject..."
+                          />
+                        </label>
+                        <label>
+                          Body
+                          <textarea
+                            rows="8"
+                            value={customDraft.body}
+                            onChange={(e) =>
+                              setCustomDraft({ ...customDraft, body: e.target.value })
+                            }
+                            placeholder="Write your email here..."
+                          />
+                        </label>
+                        <div className="email-preview">
+                          <div className="preview-title">Preview</div>
+                          <div
+                            className="preview-body"
+                            dangerouslySetInnerHTML={{
+                              __html: renderPreview(customDraft.body || "")
+                            }}
+                          />
+                        </div>
+                        <button className="primary" onClick={handleSendCustom} disabled={busy || !customDraft.subject || !customDraft.body} title={!customDraft.subject || !customDraft.body ? "Please enter both subject and body to send" : ""}>
+                          {busy ? "Sending..." : "Send Email"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ) : (

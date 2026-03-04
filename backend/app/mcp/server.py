@@ -1,11 +1,13 @@
 from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import Optional
+import json
 
 from app.agents.insights import InsightsBuddy
 from app.agents.communication import CommCoach
 from app.utils.llm import draft_email_from_summary
 from app.db.models.email import Email
+from app.db.models.resolution import Resolution
 
 
 class MCPServer:
@@ -48,7 +50,61 @@ class MCPServer:
             ticket_id=ticket_id, body=draft_body, engineer_id=engineer_id
         )
 
+        # Save analysis results to resolutions table for caching
+        if progress:
+            progress("Saving analysis results")
+        self._save_analysis_cache(
+            ticket_id=ticket_id,
+            root_cause=result["root_cause"],
+            recommendation=result["recommendation"],
+            web_solutions=result.get("web_solutions", []),
+            engineer_id=engineer_id,
+        )
+
         return {"insights": result, "draft_email": draft_email}
+    
+    def _save_analysis_cache(
+        self,
+        ticket_id: UUID,
+        root_cause: str,
+        recommendation: str,
+        web_solutions: list,
+        engineer_id: Optional[UUID] = None,
+    ):
+        """Save analysis results as a cached resolution for quick retrieval."""
+        # Check if analysis cache already exists
+        existing = (
+            self.db.query(Resolution)
+            .filter(Resolution.ticket_id == ticket_id)
+            .filter(Resolution.is_final == False)
+            .filter(Resolution.is_kb == False)
+            .filter(Resolution.outcome == "pending")
+            .first()
+        )
+        
+        # Store web_solutions as JSON in reasoning field
+        web_solutions_json = json.dumps(web_solutions) if web_solutions else None
+        
+        if existing:
+            # Update existing cache
+            existing.root_cause = root_cause
+            existing.resolution_text = recommendation
+            existing.reasoning = web_solutions_json
+        else:
+            # Create new cache entry
+            cache = Resolution(
+                ticket_id=ticket_id,
+                resolution_text=recommendation,
+                root_cause=root_cause,
+                outcome="pending",  # Use "pending" to mark as analysis cache
+                reasoning=web_solutions_json,
+                is_final=False,
+                is_kb=False,
+                created_by=engineer_id,
+            )
+            self.db.add(cache)
+        
+        self.db.commit()
 
     def approve_and_send(self, email_id: UUID) -> Email:
         """Called by the UI when the engineer approves the draft.  Approves the

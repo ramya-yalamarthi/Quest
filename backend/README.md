@@ -1,5 +1,45 @@
 # Backend
 
+## Setup
+
+### Environment Variables
+
+Create a `.env` file in the `backend/` directory with the following variables:
+
+```env
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+
+# JWT Authentication
+JWT_SECRET=your-secret-key
+JWT_ALGORITHM=HS256
+JWT_EXPIRE_MINUTES=480
+
+# Azure OpenAI (for LLM)
+OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com
+OPENAI_API_KEY=your-api-key
+LLM_MODEL=gpt-4.1
+LLM_API_VERSION=2024-12-01-preview
+
+# Bing Search API (Optional - for web search)
+# Get your key from https://portal.azure.com
+BING_SEARCH_API_KEY=your-bing-search-api-key
+BING_SEARCH_ENDPOINT=https://api.bing.microsoft.com/v7.0/search
+```
+
+**Note:** If `BING_SEARCH_API_KEY` is not provided, the system will use DuckDuckGo as a fallback for web search.
+
+### Web Search Feature
+
+The system now includes an intelligent web search agent that:
+- Searches across public websites for similar discussions and resolutions
+- Uses LLM to build optimized search queries
+- Filters and ranks results by relevance
+- Extracts actionable solution steps from web pages
+- Supports multiple sources (official docs, forums, communities)
+
+The web search appears under "Web Solutions" in the ticket analysis view.
+
 ## Database schema (PostgreSQL)
 
 Run these queries in order to create the schema exactly as shown in the DB output.
