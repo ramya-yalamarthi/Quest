@@ -26,16 +26,63 @@ def ensure_user(db: Session, *, email: str, display_name: str, role: str) -> Use
 def create_ticket(db: Session, *, title: str, description: str, created_by_user_id):
     text = f"Title: {title}\nDescription: {description}"
     embedding = get_embedding(text)
+    # Generate AI summary
+    from app.agents.summarization_agent import SummarizationAgent
+    from app.utils.llm import LLMClient
+    llm = LLMClient()
+    summarizer = SummarizationAgent(title, description)
+    summary_result = summarizer.run(llm)
+    ticket_summary = summary_result.get("summary", "No summary available.")
     t = Ticket(
         title=title,
         description=description,
         status="NEW",
         created_by=created_by_user_id,
         embedding=embedding,
+        ticket_summary=ticket_summary,
     )
     db.add(t)
     db.commit()
     db.refresh(t)
+
+    # Call InsightsBuddy to get recommended steps and similar tickets
+    from app.agents.insights import InsightsBuddy
+    insights = InsightsBuddy(db)
+    analysis = insights.analyse_ticket(t.ticket_id)
+
+    # Store similar tickets as JSON in outcome column
+    outcome_value = [
+        {
+            "ticket_id": sim_ticket["ticket_id"],
+            "title": sim_ticket["title"],
+            "similarity": sim_ticket["similarity"]
+        }
+        for sim_ticket in analysis["similar_tickets"]
+    ]
+
+    # Use actual recommended steps and reasoning from InsightsBuddy
+    recommendedsteps_list = analysis.get("recommended_steps", [])
+    reasoning = None
+    if recommendedsteps_list and isinstance(recommendedsteps_list, list):
+        reasoning = recommendedsteps_list[0].get("reasoning")
+    resolution = Resolution(
+        ticket_id=t.ticket_id,
+        resolution_text=None,
+        recommendedsteps=recommendedsteps_list,
+        root_cause=None,
+        outcome=outcome_value,
+        confidence_score=None,
+        reasoning=reasoning,
+        embedding=None,
+        created_by=created_by_user_id,
+    )
+    db.add(resolution)
+    db.commit()
+
+    # Mark ticket as having resolutions
+    t.has_resolution = True
+    db.commit()
+
     return t
 
 def list_tickets(
@@ -156,6 +203,18 @@ def set_ticket_status(db: Session, *, ticket_id, status: str):
 
 # ---------------------------------------------------------------------------
 # helpers for the resolutions table
+def delete_resolution(db: Session, resolution_id):
+    r = db.query(Resolution).filter(Resolution.resolution_id == resolution_id).first()
+    if r:
+        db.delete(r)
+        db.commit()
+        return True
+    return False
+
+def delete_all_resolutions(db: Session):
+    db.query(Resolution).delete()
+    db.commit()
+    return True
 from app.db.models.resolution import Resolution
 
 
@@ -168,9 +227,31 @@ def add_resolution(
     outcome=None,
     confidence_score=None,
     reasoning=None,
-    is_final=True,
-    is_kb=False,
+    total_similar_tickets_above70=None,
 ):
+    # Generate embedding for new resolution
+    from app.db.models.ticket import Ticket
+    from app.utils.embeddings import get_embedding
+    t = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
+    if t:
+        text = f"Title: {t.title}\nDescription: {t.description}\nResolution: {resolution_text}"
+    else:
+        text = resolution_text
+    embedding = get_embedding(text)
+    # ENFORCE: If outcome is empty or has no similar_ticket_ids, do not store any recommended steps
+    recommendedsteps = None
+    if outcome and isinstance(outcome, list) and len(outcome) > 0:
+        first = outcome[0]
+        # Support both legacy and new keys
+        similar_ids = first.get("similar_ticket_ids") or first.get("ids_above_70")
+        if similar_ids and isinstance(similar_ids, list) and len(similar_ids) > 0:
+            # Only allow recommendedsteps if there are similar tickets
+            recommendedsteps = None  # Let caller set this if needed
+        else:
+            # No similar tickets, so no recommended steps
+            recommendedsteps = []
+    else:
+        recommendedsteps = []
     r = Resolution(
         ticket_id=ticket_id,
         resolution_text=resolution_text,
@@ -178,9 +259,10 @@ def add_resolution(
         outcome=outcome,
         confidence_score=confidence_score,
         reasoning=reasoning,
-        is_final=is_final,
-        is_kb=is_kb,
         created_by=created_by,
+        embedding=embedding,
+        total_similar_tickets_above70=total_similar_tickets_above70,
+        recommendedsteps=recommendedsteps,
     )
     db.add(r)
     db.commit()

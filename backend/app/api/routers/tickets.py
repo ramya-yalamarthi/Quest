@@ -107,9 +107,6 @@ def get_cached_analysis(
     cached = (
         db.query(Resolution)
         .filter(Resolution.ticket_id == ticket_id)
-        .filter(Resolution.is_final == False)
-        .filter(Resolution.is_kb == False)
-        .filter(Resolution.outcome == "pending")
         .first()
     )
     

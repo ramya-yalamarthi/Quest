@@ -10,7 +10,6 @@ def main() -> None:
         resolutions = (
             db.query(Resolution)
             .filter(Resolution.embedding == None)
-            .filter(Resolution.is_final == True)
             .all()
         )
 

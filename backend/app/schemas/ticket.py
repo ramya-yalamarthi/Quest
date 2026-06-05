@@ -27,6 +27,14 @@ class TicketOut(BaseModel):
     manager_next_update_due_at: Optional[datetime] = None
     manager_sla_status: Optional[str] = None
 
+    priority: Optional[str] = None
+    service_status: Optional[str] = None
+    service: Optional[str] = None
+    env: Optional[str] = None
+    region: Optional[str] = None
+    ticket_summary: Optional[str] = None
+    has_resolution: Optional[bool] = None
+
     class Config:
         from_attributes = True
 

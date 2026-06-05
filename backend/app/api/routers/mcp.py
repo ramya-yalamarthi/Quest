@@ -31,12 +31,13 @@ class AnalyzeTicketRequest(BaseModel):
 
 
 class SimilarResolution(BaseModel):
-    resolution_id: UUID
-    ticket_id: UUID
+    resolution_id: Optional[str]
+    ticket_id: Optional[str]
     resolution_text: str
     root_cause: Optional[str] = None
-    outcome: Optional[str] = None
+    outcome: Optional[list[dict]] = None
     confidence_score: Optional[float] = None
+    similarity: Optional[float] = None
 
 
 class WebSolution(BaseModel):
@@ -48,10 +49,11 @@ class WebSolution(BaseModel):
 
 class AnalyzeTicketResponse(BaseModel):
     ticket_id: UUID
+    ticket_summary: str
+    error_codes: list[str]
     root_cause: str
     recommendation: str
     similar_count: int
-    draft_email_id: UUID
     draft_email_subject: str
     draft_email_body: str
     similar_resolutions: list[SimilarResolution]
@@ -72,41 +74,81 @@ class LogResolutionRequest(BaseModel):
     ticket_id: UUID
     resolution_text: str
     root_cause: Optional[str] = None
-    outcome: Optional[str] = None
+    outcome: Optional[list[dict]] = None
     confidence: Optional[float] = None
     reasoning: Optional[str] = None
     is_kb: bool = False
 
 
 def build_analyze_response(result: dict) -> AnalyzeTicketResponse:
+    ticket = result["insights"]["ticket"]
+    draft_email = result["draft_email"]
+    # Convert ORM objects to dict if needed
+    if hasattr(ticket, "__dict__"):
+        ticket_data = dict(ticket.__dict__)
+    elif isinstance(ticket, dict):
+        ticket_data = ticket
+    else:
+        ticket_data = {}
+
+    if hasattr(draft_email, "__dict__"):
+        draft_email_data = dict(draft_email.__dict__)
+    elif isinstance(draft_email, dict):
+        draft_email_data = draft_email
+    else:
+        draft_email_data = {}
+
+    similar_resolutions = []
+    for r in result["insights"]["similar_resolutions"]:
+        if hasattr(r, "__dict__"):
+            r_data = dict(r.__dict__)
+        elif isinstance(r, dict):
+            r_data = r
+        else:
+            r_data = {}
+        resolution_id = r_data.get("resolution_id")
+        ticket_id = r_data.get("ticket_id")
+        similarity = r_data.get("similarity")
+        resolution_id = str(resolution_id) if resolution_id else None
+        ticket_id = str(ticket_id) if ticket_id else None
+        resolution_text = r_data.get("resolution_text")
+        if resolution_text is None:
+            resolution_text = ""
+        similar_resolutions.append(SimilarResolution(
+            resolution_id=resolution_id,
+            ticket_id=ticket_id,
+            resolution_text=resolution_text,
+            root_cause=r_data.get("root_cause"),
+            outcome=r_data.get("outcome"),
+            confidence_score=r_data.get("confidence_score"),
+            similarity=similarity
+        ))
+
+    web_solutions = [
+        WebSolution(
+            title=item["title"],
+            url=item["url"],
+            summary=item.get("summary"),
+            steps=item.get("steps", []),
+        )
+        for item in result["insights"].get("web_solutions", [])
+    ]
+
+    from fastapi import HTTPException
+    ticket_id = ticket_data.get("ticket_id")
+    if not ticket_id:
+        raise HTTPException(status_code=500, detail="ticket_id missing in response")
     return AnalyzeTicketResponse(
-        ticket_id=result["insights"]["ticket"].ticket_id,
+        ticket_id=ticket_id,
+        ticket_summary=result["insights"].get("ticket_summary", ""),
+        error_codes=result["insights"].get("error_codes", []),
         root_cause=result["insights"]["root_cause"],
         recommendation=result["insights"]["recommendation"],
-        similar_count=len(result["insights"]["similar_resolutions"]),
-        draft_email_id=result["draft_email"].email_id,
-        draft_email_subject=result["draft_email"].subject,
-        draft_email_body=result["draft_email"].body,
-        similar_resolutions=[
-            SimilarResolution(
-                resolution_id=r.resolution_id,
-                ticket_id=r.ticket_id,
-                resolution_text=r.resolution_text,
-                root_cause=r.root_cause,
-                outcome=r.outcome,
-                confidence_score=r.confidence_score,
-            )
-            for r in result["insights"]["similar_resolutions"]
-        ],
-        web_solutions=[
-            WebSolution(
-                title=item["title"],
-                url=item["url"],
-                summary=item.get("summary"),
-                steps=item.get("steps", []),
-            )
-            for item in result["insights"].get("web_solutions", [])
-        ],
+        similar_count=len(similar_resolutions),
+        draft_email_subject=draft_email_data.get("subject", "") if draft_email_data else "",
+        draft_email_body=draft_email_data.get("body", "") if draft_email_data else "",
+        similar_resolutions=similar_resolutions,
+        web_solutions=web_solutions,
     )
 
 
@@ -149,7 +191,6 @@ def analyze_ticket_stream(
 
     support_only(current)
 
-    server = MCPServer(db)
     engineer_id = UUID(current["user_id"])
     engineer_name = current.get("display_name")
     q: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -158,7 +199,10 @@ def analyze_ticket_stream(
         q.put(("step", step))
 
     def run() -> None:
+        from app.db.session import SessionLocal
+        thread_db = SessionLocal()
         try:
+            server = MCPServer(thread_db)
             result = server.handle_new_ticket(
                 ticket_id,
                 engineer_id=engineer_id,
@@ -169,6 +213,8 @@ def analyze_ticket_stream(
         except Exception as e:
             logger.exception("Analyze ticket failed", extra={"ticket_id": str(ticket_id)})
             q.put(("error", "Analysis failed"))
+        finally:
+            thread_db.close()
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()

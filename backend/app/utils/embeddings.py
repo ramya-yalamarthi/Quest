@@ -3,6 +3,8 @@ import os
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 from app.config import EMBEDDING_PROVIDER, LOCAL_EMBEDDING_MODEL, EMBEDDING_DIM
+from sentence_transformers import SentenceTransformer
+import torch
 
 load_dotenv()
 
@@ -16,10 +18,13 @@ def _get_provider() -> str:
 def _get_local_model():
     global _local_model
     if _local_model is None:
-        from sentence_transformers import SentenceTransformer
-
         model_name = LOCAL_EMBEDDING_MODEL
-        _local_model = SentenceTransformer(model_name, device="cpu")
+        _local_model = SentenceTransformer(model_name)
+        # Move model to CPU, handling meta tensors
+        if any(p.device.type == 'meta' for p in _local_model.parameters()):
+            _local_model = _local_model.to_empty(device='cpu')
+        else:
+            _local_model = _local_model.to('cpu')
     return _local_model
 
 

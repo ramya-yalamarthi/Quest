@@ -18,7 +18,7 @@
 
 body {
   margin: 0;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
   background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 45%, #eef8f5 100%);
   color: var(--text);
   min-height: 100vh;

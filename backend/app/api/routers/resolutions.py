@@ -8,6 +8,7 @@ from app.schemas.resolution import ResolutionCreate, ResolutionOut
 from app.mcp import tools
 
 router = APIRouter(prefix="/resolutions", tags=["resolutions"])
+from fastapi import Response
 
 
 def support_only(current):
@@ -32,6 +33,19 @@ def get_one(res_id: UUID, db: Session = Depends(get_db), current=Depends(get_cur
 
 @router.post("", response_model=ResolutionOut)
 def create_resolution(payload: ResolutionCreate, db: Session = Depends(get_db), current=Depends(get_current_user)):
+    @router.delete("/{res_id}", status_code=204)
+    def delete_resolution(res_id: UUID, db: Session = Depends(get_db), current=Depends(get_current_user)):
+        support_only(current)
+        ok = tools.delete_resolution(db, res_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Resolution not found")
+        return Response(status_code=204)
+
+    @router.delete("", status_code=204)
+    def delete_all_resolutions(db: Session = Depends(get_db), current=Depends(get_current_user)):
+        support_only(current)
+        tools.delete_all_resolutions(db)
+        return Response(status_code=204)
     support_only(current)
     return tools.add_resolution(
         db,
@@ -41,7 +55,5 @@ def create_resolution(payload: ResolutionCreate, db: Session = Depends(get_db), 
         outcome=payload.outcome,
         confidence_score=payload.confidence_score,
         reasoning=payload.reasoning,
-        is_final=payload.is_final,
-        is_kb=payload.is_kb,
         created_by=UUID(current["user_id"]),
     )

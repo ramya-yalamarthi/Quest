@@ -2,6 +2,20 @@
 
 ## Setup
 
+start the docker conatiner
+docker ps ( to check the connection) /
+docker exec -it pgvector psql -U postgres
+\c support_ai
+---------------------
+docker ps -a
+docker start pgvector
+docker ps
+docker exec -it pgvector psql -U postgres
+\l (list databases)
+(q to quit)
+\c support_ai
+\d (Shows all tables in the current database)
+\d tablename (describe table)
 ### Environment Variables
 
 Create a `.env` file in the `backend/` directory with the following variables:
@@ -105,8 +119,6 @@ CREATE TABLE IF NOT EXISTS resolutions (
   outcome text NULL,
   confidence_score numeric(5,4) NULL,
   reasoning text NULL,
-  is_final boolean DEFAULT false,
-  is_kb boolean DEFAULT false,
   embedding vector(1536) NULL,
   created_by uuid NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -135,3 +147,23 @@ CREATE TABLE IF NOT EXISTS ai_audit_log (
   CONSTRAINT ai_audit_log_ticket_id_fkey FOREIGN KEY (ticket_id) REFERENCES tickets(ticket_id) ON DELETE SET NULL
 );
 ```
+
+Backend (FastAPI)
+PowerShell commands:
+cd "c:\Users\AnjaliMamidi\OneDrive - People Tech Group Inc\Documents\microsoft\support-ai-mvp\backend"
+py -m venv .venv
+..venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+
+Frontend (Vite React)
+PowerShell commands:
+cd "c:\Users\AnjaliMamidi\OneDrive - People Tech Group Inc\Documents\microsoft\support-ai-mvp\backend\frontend"
+npm install
+npm run dev
+
+URLs after startup:
+
+Backend: http://localhost:8000
+Frontend: http://localhost:5173

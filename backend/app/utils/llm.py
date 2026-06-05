@@ -44,7 +44,7 @@ class LLMClient:
             model=self.deployment,
             messages=messages,
             temperature=temperature,
-            max_completion_tokens=max_tokens,
+            max_tokens=max_tokens,
         )
 
         return response.choices[0].message.content.strip()
@@ -59,8 +59,7 @@ def summarize_root_cause_with_llm(
 ) -> Tuple[str, str]:
     """Return (root_cause, recommendation) using configured OpenAI model."""
     if not historical_snippets:
-        msg = "Not enough data."
-        return msg, msg
+        return None, None
     history_block = "\n\n".join(historical_snippets)
     prompt = (
         "You are a technical support assistant. "
@@ -119,17 +118,20 @@ def summarize_root_cause_with_llm(
         if current:
             sections[current].append(stripped)
 
-    def finalize_section(key: str) -> str:
+    def finalize_section(key: str) -> Optional[str]:
         value = "\n".join([v for v in sections[key] if v is not None]).strip()
-        return value or "Not enough data."
+        return value or None
 
     root_cause = finalize_section("root cause")
     recommended = finalize_section("recommended steps")
     not_worked = finalize_section("what did not work")
 
     recommendation = recommended
-    if not_worked != "Not enough data.":
-        recommendation = recommendation + f"\nWhat did not work: {not_worked}"
+    if not_worked:
+        if recommendation:
+            recommendation = recommendation + f"\nWhat did not work: {not_worked}"
+        else:
+            recommendation = f"What did not work: {not_worked}"
 
     return root_cause, recommendation
 

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Text, DateTime, ForeignKey, Boolean, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
@@ -9,6 +9,7 @@ from pgvector.sqlalchemy import Vector
 from app.db.base import Base
 
 class Ticket(Base):
+    ticket_summary = Column(Text, nullable=True)  # AI-generated summary
     __tablename__ = "tickets"
 
     ticket_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -31,3 +32,11 @@ class Ticket(Base):
 
     # combined embedding of ticket title/description and any final resolution text
     embedding = Column(Vector(1536))
+
+    # New fields for UI display
+    priority = Column(Text, nullable=True, default="Normal")  # e.g. '🔴 P1 — Critical'
+    service_status = Column(Text, nullable=True, default="OK")  # e.g. '⚠ Service Degraded'
+    service = Column(Text, nullable=True, default="General")  # e.g. 'Analytics Pipeline'
+    env = Column(Text, nullable=True, default="Production")  # e.g. 'Production'
+    region = Column(Text, nullable=True, default="Unknown")  # e.g. 'US-West-2'
+    has_resolution = Column(Boolean, nullable=False, default=False)

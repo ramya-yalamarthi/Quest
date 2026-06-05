@@ -121,8 +121,6 @@ class CommCoach:
         confidence: Optional[float] = None,
         reasoning: Optional[str] = None,
         engineer_id: Optional[UUID] = None,
-        is_final: bool = True,
-        is_kb: bool = False,
     ) -> Resolution:
         res = Resolution(
             ticket_id=ticket_id,
@@ -131,8 +129,6 @@ class CommCoach:
             outcome=outcome,
             confidence_score=confidence,
             reasoning=reasoning,
-            is_final=is_final,
-            is_kb=is_kb,
             created_by=engineer_id,
         )
         self.db.add(res)

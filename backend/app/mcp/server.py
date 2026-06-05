@@ -33,22 +33,35 @@ class MCPServer:
         progress=None,
     ) -> dict:
         """Called when an engineer opens/assigns a ticket or when an external
-        trigger detects a NEW ticket.  Returns a draft email record along with
-        analysis results so the UI can display everything.
-        """
+        trigger detects a NEW ticket. Returns only analysis results; draft email is not created until Send is clicked."""
         result = self.insights.analyse_ticket(ticket_id, progress=progress)
-        # the insights result contains ticket object, similar_resolutions, etc.
-        summary = result["recommendation"]
-        if progress:
-            progress("Drafting customer email")
-        draft_body = draft_email_from_summary(
-            summary,
-            sender_name=engineer_name or "Support Team",
-        )
 
-        draft_email = self.comm.draft_email(
-            ticket_id=ticket_id, body=draft_body, engineer_id=engineer_id
-        )
+        # Summarize ticket info using SummarizationAgent
+        from app.db.models.ticket import Ticket
+        from app.agents.summarization_agent import SummarizationAgent
+        from app.utils.llm import LLMClient
+        ticket = self.db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
+        if ticket:
+            # If ticket_summary exists, use it; else generate and save
+            if ticket.ticket_summary:
+                result["ticket_summary"] = ticket.ticket_summary
+                result["error_codes"] = []
+            else:
+                llm = LLMClient()
+                summarizer = SummarizationAgent(ticket.title, ticket.description)
+                summary_result = summarizer.run(llm)
+                summary = summary_result.get("summary", "No summary available.")
+                result["ticket_summary"] = summary
+                result["error_codes"] = summary_result.get("error_codes", [])
+                # Save summary to ticket
+                ticket.ticket_summary = summary
+                self.db.commit()
+            # Ensure ticket is included as a dict
+            result["ticket"] = dict(ticket.__dict__)
+        else:
+            result["ticket_summary"] = "No summary available."
+            result["error_codes"] = []
+            result["ticket"] = {}
 
         # Save analysis results to resolutions table for caching
         if progress:
@@ -57,18 +70,17 @@ class MCPServer:
             ticket_id=ticket_id,
             root_cause=result["root_cause"],
             recommendation=result["recommendation"],
-            web_solutions=result.get("web_solutions", []),
+            # web_solutions=result.get("web_solutions", []),
             engineer_id=engineer_id,
         )
-
-        return {"insights": result, "draft_email": draft_email}
+        return {"insights": result, "draft_email": None}
     
     def _save_analysis_cache(
         self,
         ticket_id: UUID,
         root_cause: str,
         recommendation: str,
-        web_solutions: list,
+        # web_solutions: list,
         engineer_id: Optional[UUID] = None,
     ):
         """Save analysis results as a cached resolution for quick retrieval."""
@@ -76,35 +88,31 @@ class MCPServer:
         existing = (
             self.db.query(Resolution)
             .filter(Resolution.ticket_id == ticket_id)
-            .filter(Resolution.is_final == False)
-            .filter(Resolution.is_kb == False)
-            .filter(Resolution.outcome == "pending")
             .first()
         )
         
         # Store web_solutions as JSON in reasoning field
-        web_solutions_json = json.dumps(web_solutions) if web_solutions else None
+        # web_solutions_json = json.dumps(web_solutions) if web_solutions else None
         
         if existing:
             # Update existing cache
             existing.root_cause = root_cause
             existing.resolution_text = recommendation
-            existing.reasoning = web_solutions_json
+            # existing.reasoning = web_solutions_json
+            existing.outcome = []  # Always store as empty list for analysis cache
         else:
             # Create new cache entry
             cache = Resolution(
                 ticket_id=ticket_id,
                 resolution_text=recommendation,
                 root_cause=root_cause,
-                outcome="pending",  # Use "pending" to mark as analysis cache
-                reasoning=web_solutions_json,
-                is_final=False,
-                is_kb=False,
+                outcome=[],  # Use empty list to mark as analysis cache
+                # reasoning=web_solutions_json,
                 created_by=engineer_id,
             )
             self.db.add(cache)
-        
-        self.db.commit()
+
+            self.db.commit()
 
     def approve_and_send(self, email_id: UUID) -> Email:
         """Called by the UI when the engineer approves the draft.  Approves the
@@ -131,7 +139,7 @@ class MCPServer:
         ticket_id: UUID,
         resolution_text: str,
         root_cause: Optional[str] = None,
-        outcome: Optional[str] = None,
+        outcome: Optional[list[dict]] = None,
         confidence: Optional[float] = None,
         reasoning: Optional[str] = None,
         engineer_id: Optional[UUID] = None,
@@ -146,6 +154,4 @@ class MCPServer:
             confidence=confidence,
             reasoning=reasoning,
             engineer_id=engineer_id,
-            is_final=True,
-            is_kb=is_kb,
         )

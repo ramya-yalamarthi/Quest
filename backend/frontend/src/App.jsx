@@ -1,4 +1,146 @@
+import React from "react";
+// Escalation Timer Component
+function EscalationTimer({ ticket }) {
+  // Always base SLA on ticket creation time
+  const startAt = ticket.created_at ? new Date(ticket.created_at) : null;
+  const totalSLAHours = 3;
+  const now = new Date();
+  let elapsedMs = 0;
+  if (startAt) {
+    elapsedMs = Math.max(0, now - startAt);
+  }
+  const elapsedHours = Math.floor(elapsedMs / 3600000);
+  const elapsedMinutes = Math.floor((elapsedMs % 3600000) / 60000);
+  const slaMs = totalSLAHours * 60 * 60 * 1000;
+  const isOverdue = elapsedMs > slaMs;
+  return (
+    <div style={{ background: '#fff3e0', border: '1px solid #ffb300', borderRadius: '8px', padding: '16px', minHeight: '120px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+      <h4 style={{ margin: 0, fontWeight: 700, color: '#ff6f00', fontSize: '18px' }}>Escalation Timer</h4>
+      <div style={{ fontSize: '16px', fontWeight: 600, color: isOverdue ? '#d32f2f' : '#388e3c', marginTop: '8px' }}>{isOverdue ? 'OVERDUE' : 'On time'}</div>
+      <div style={{ fontSize: '15px', marginTop: '4px' }}>Escalate to L2 in</div>
+      <div style={{ fontSize: '15px', marginTop: '4px' }}>SLA: {totalSLAHours}h total · {elapsedHours}h {elapsedMinutes}m elapsed</div>
+    </div>
+  );
+}
+
+// EscalationJourney: SVG timeline with milestones, arrows, and dynamic progress bar
+function EscalationJourney({ ticket, slaMs }) {
+  const createdAt = ticket?.created_at ? new Date(ticket.created_at) : null;
+  const now = new Date();
+  const sla = slaMs || 3 * 60 * 60 * 1000; // 3 hours in ms
+
+  // Always active for now
+  const llmActive = true;
+  const ackActive = true;
+  // Use status for resolvedActive
+  const resolvedActive = ticket?.status === 'RESOLVED';
+
+  // Progress calculation (from Acknowledged to Resolved)
+  let progress = 0;
+  if (createdAt) {
+    if (resolvedActive) {
+      progress = 1;
+    } else {
+      progress = Math.min(1, (now - createdAt) / sla);
+    }
+  }
+  // Progress color logic
+  let progressColor = '#43a047'; // green
+  if (!resolvedActive && progress >= 0.8) progressColor = '#e53935'; // red if overdue and not resolved
+
+  // SVG layout
+  const width = 420;
+  const height = 70;
+  const milestones = [
+    { label: 'LLM Reasoning', x: 40, active: llmActive, icon: '🤖' },
+    { label: 'Acknowledged', x: 210, active: ackActive, icon: '📩' },
+    {
+      label: 'Resolved',
+      x: 380,
+      active: resolvedActive,
+      icon: resolvedActive ? '✅' : '',
+      fill: resolvedActive ? '#7c4dff' : '#fff',
+      stroke: resolvedActive ? '#7c4dff' : '#bdbdbd',
+      iconFill: resolvedActive ? '#43a047' : '#bdbdbd',
+    },
+  ];
+
+  // Progress line (from Acknowledged to Resolved)
+  const progressStart = milestones[1].x;
+  const progressEnd = milestones[2].x;
+  const progressLineLength = progressEnd - progressStart;
+  const filledLength = Math.max(0, Math.min(progressLineLength, progress * progressLineLength));
+
+  return (
+    <div style={{ width: width, margin: '0 auto', padding: '12px 0' }}>
+      <svg width={width} height={height}>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L8,4 L0,8 Z" fill="#888" />
+          </marker>
+        </defs>
+        {/* Main line */}
+        <line x1={milestones[0].x} y1={35} x2={milestones[2].x} y2={35} stroke="#e0e0e0" strokeWidth={6} />
+        {/* Progress line */}
+        <line x1={progressStart} y1={35} x2={progressStart + filledLength} y2={35} stroke={progressColor} strokeWidth={6} />
+        {/* Milestone circles */}
+        {milestones.map((m, idx) => (
+          <circle
+            key={m.label}
+            cx={m.x}
+            cy={35}
+            r={18}
+            fill={idx === 2 ? m.fill : m.active ? '#7c4dff' : '#fff'}
+            stroke={idx === 2 ? m.stroke : m.active ? '#7c4dff' : '#bdbdbd'}
+            strokeWidth={m.active ? 4 : 2}
+          />
+        ))}
+        {/* Milestone icons */}
+        <text x={milestones[0].x} y={40} textAnchor="middle" fontSize="20" fill="#fff">🤖</text>
+        <text x={milestones[1].x} y={40} textAnchor="middle" fontSize="20" fill="#fff">📩</text>
+        {/* Only show green check if resolved, else gray circle */}
+        {resolvedActive ? (
+          <text x={milestones[2].x} y={40} textAnchor="middle" fontSize="20" fill="#43a047">✅</text>
+        ) : (
+          <circle cx={milestones[2].x} cy={35} r={10} fill="#fff" stroke="#bdbdbd" strokeWidth={2} />
+        )}
+        {/* Arrows */}
+        <line x1={milestones[0].x + 18} y1={35} x2={milestones[1].x - 18} y2={35} stroke="#888" strokeWidth={2} markerEnd="url(#arrow)" />
+        <line x1={milestones[1].x + 18} y1={35} x2={milestones[2].x - 18} y2={35} stroke="#888" strokeWidth={2} markerEnd="url(#arrow)" />
+        {/* Labels */}
+        {milestones.map((m, idx) => (
+          <text
+            key={m.label + '-label'}
+            x={m.x}
+            y={65}
+            textAnchor="middle"
+            fontSize="13"
+            fill="#333"
+            fontWeight={m.active ? 700 : 400}
+          >
+            {m.label}
+          </text>
+        ))}
+      </svg>
+      {/* Progress percent and time info */}
+      {createdAt && (
+        <div style={{ textAlign: 'center', fontSize: 13, marginTop: 4, color: progressColor }}>
+          {resolvedActive
+            ? `Resolved (${Math.round(progress * 100)}%)`
+            : `Elapsed: ${Math.floor((now - createdAt) / 3600000)}h ${Math.floor(((now - createdAt) % 3600000) / 60000)}m (${Math.round(progress * 100)}%)`}
+        </div>
+      )}
+      <div style={{ textAlign: 'center', fontSize: 11, color: '#888', marginTop: 2 }}>
+        SLA: 3h
+      </div>
+    </div>
+  );
+}
+
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Bar } from "react-chartjs-2";
+import { Chart, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from "chart.js";
+Chart.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 import {
   login,
   fetchTickets,
@@ -19,6 +161,35 @@ const initialAuth = () => {
 };
 
 export default function App() {
+    const [trendRange, setTrendRange] = useState(7);
+    const [resolution, setResolution] = useState(null);
+    const [outcomeWithDates, setOutcomeWithDates] = useState([]);
+
+    // Helper to get similar incident trend data (now uses outcomeWithDates and groups by created_at)
+    const getIncidentTrendData = () => {
+      if (!outcomeWithDates || !Array.isArray(outcomeWithDates) || !outcomeWithDates.length) {
+        return { labels: [], data: [] };
+      }
+      const now = new Date();
+      const rangeDays = trendRange;
+      // Filter tickets by date range
+      const filtered = outcomeWithDates.filter(
+        t => t.created_at && (now - new Date(t.created_at)) <= rangeDays * 24 * 60 * 60 * 1000
+      );
+      // Group by day
+      const dayCounts = {};
+      filtered.forEach(t => {
+        const d = new Date(t.created_at);
+        const day = d.toLocaleDateString();
+        dayCounts[day] = (dayCounts[day] || 0) + 1;
+      });
+      // Sort days
+      const sortedDays = Object.keys(dayCounts).sort((a, b) => new Date(a) - new Date(b));
+      return {
+        labels: sortedDays,
+        data: sortedDays.map(day => dayCounts[day])
+      };
+    };
   const [{ token, user }, setAuth] = useState(initialAuth);
   const [tickets, setTickets] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -86,7 +257,7 @@ export default function App() {
           setAnalysis({
             root_cause: data.root_cause,
             recommendation: data.recommendation,
-            web_solutions: data.web_solutions,
+            // web_solutions: data.web_solutions,
             similar_count: 0,
             similar_resolutions: []
           });
@@ -356,6 +527,62 @@ export default function App() {
     return diffMs >= 0 ? `due in ${label}` : `overdue by ${label}`;
   };
 
+
+
+  useEffect(() => {
+    if (!selected || !token) return;
+    // Fetch resolution for the selected ticket
+    fetch(`${API_BASE}/resolutions?ticket_id=${selected.ticket_id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch resolution');
+        return res.json();
+      })
+      .then(async data => {
+        if (data && data.length > 0) {
+          setResolution(data[0]);
+          // If outcome exists, check for missing created_at and fetch as needed
+          if (data[0].outcome && Array.isArray(data[0].outcome)) {
+            const outcome = data[0].outcome;
+            // Find which items are missing created_at
+            const needsFetch = outcome.filter(item => !item.created_at && item.ticket_id);
+            if (needsFetch.length === 0) {
+              setOutcomeWithDates(outcome);
+            } else {
+              // Fetch created_at for each missing ticket_id
+              const fetches = await Promise.all(
+                outcome.map(async item => {
+                  if (item.created_at || !item.ticket_id) return item;
+                  try {
+                    const res = await fetch(`${API_BASE}/tickets/${item.ticket_id}`, {
+                      headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (!res.ok) throw new Error('Failed to fetch ticket');
+                    const ticket = await res.json();
+                    return { ...item, created_at: ticket.created_at };
+                  } catch {
+                    return item;
+                  }
+                })
+              );
+              setOutcomeWithDates(fetches);
+            }
+          } else {
+            setOutcomeWithDates([]);
+          }
+        } else {
+          setResolution(null);
+          setOutcomeWithDates([]);
+        }
+      })
+      .catch(err => {
+        setResolution(null);
+        setOutcomeWithDates([]);
+        console.debug('No resolution found:', err);
+      });
+  }, [selected, token]);
+
   if (!token) {
     return (
       <div className="page">
@@ -481,17 +708,19 @@ export default function App() {
                     <div className="meta">
                       {ticket.ticket_id} • {formatRelative(ticket.last_email_at)}
                     </div>
-                    {ticket.sla_status && ticket.sla_status !== "pending" ? (
-                      <div
-                        className={`sla-flag ${
-                          ticket.sla_status === "overdue" ? "overdue" : "on-time"
-                        }`}
-                      >
-                        {ticket.sla_status === "overdue"
-                          ? "Overdue"
-                          : "On time"}
-                      </div>
-                    ) : null}
+                    {/* SLA status based on created_at and 3h SLA */}
+                    {ticket.created_at ? (() => {
+                      const createdAt = new Date(ticket.created_at);
+                      const now = new Date();
+                      const elapsedMs = Math.max(0, now - createdAt);
+                      const slaMs = 3 * 60 * 60 * 1000;
+                      const isOverdue = elapsedMs > slaMs;
+                      return (
+                        <div className={`sla-flag ${isOverdue ? "overdue" : "on-time"}`}>
+                          {isOverdue ? "Overdue" : "On time"}
+                        </div>
+                      );
+                    })() : null}
                   </li>
                 ))}
               </ul>
@@ -552,24 +781,25 @@ export default function App() {
             <div className="ticket-detail">
               <div className="ticket-header">
                 <div>
-                  <h2>{selected.title}</h2>
-                  <p>{selected.description}</p>
-                  <div className="status-row detail">
-                    <div className="status-chip">
-                      <span className="status-label">Last Updated</span>
-                      <span className="status-value">
-                        {formatRelative(selected.last_email_at)}
-                      </span>
+                  {/* Product, Env, Region section */}
+                  <div className="ticket-header">
+                    <div>
+                      {/* Priority, Service Status, Product, Env, Region section */}
+                      <h2>{selected.title}</h2>
+                      <p>{selected.description}</p>
+                      {/* <span className="status-row detail">
+                        ...existing code...
+                      </span> */}
                     </div>
-                    <div className="status-chip">
+                    {/* <div className="status-chip">
                       <span className="status-label">Next update</span>
                       <span className="status-value">
                         {user?.role === "SUPPORT_MANAGER" && selected.manager_next_update_due_at
                           ? formatDue(selected.manager_next_update_due_at)
                           : formatDue(selected.next_update_due_at)}
                       </span>
-                    </div>
-                    {user?.role === "SUPPORT_MANAGER" && selected.manager_sla_status ? (
+                    </div> */}
+                    {/* {user?.role === "SUPPORT_MANAGER" && selected.manager_sla_status ? (
                       <div
                         className={`sla-flag ${
                           selected.manager_sla_status === "overdue" ? "overdue" : "on-time"
@@ -589,7 +819,7 @@ export default function App() {
                           ? "Overdue"
                           : "On time"}
                       </div>
-                    ) : null}
+                    ) : null} */}
                   </div>
                 </div>
                 <div className="action-stack">
@@ -615,8 +845,67 @@ export default function App() {
 
               {analysis ? (
                 <div className="analysis">
+                  {/* Ticket Summary Section */}
+                  <div className="card accent-info">
+                    <h3>AI Summary & Contextual Analysis</h3>
+                    <div className="ticket-summary">
+                      <div style={{ marginTop: '8px' }}>
+                        <div className="rich-text" style={{ marginTop: '4px' }}
+                          dangerouslySetInnerHTML={{
+                            __html: renderPreview(
+                              selected.ticket_summary || (analysis && analysis.ticket_summary) || "No summary available."
+                            )
+                          }}
+                        />
+                        {/* Visually clear meta section below summary */}
+                        <div className="ticket-meta-summary" style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '12px',
+                          margin: '16px 0',
+                          padding: '12px',
+                          background: '#f7f7fa',
+                          borderRadius: '8px',
+                          fontSize: '1rem',
+                          fontWeight: 500
+                        }}>
+                          {selected.priority && (
+                            <span><span style={{ color: '#888'}}>Priority:</span>{selected.priority}</span>
+                          )}
+                          {selected.service && (
+                            <span><span style={{ color: '#888' }}>Product:</span> {selected.service}</span>
+                          )}
+                          {selected.env && (
+                            <span><span style={{ color: '#888' }}>Env:</span> {selected.env}</span>
+                          )}
+                          {selected.region && (
+                            <span><span style={{ color: '#888' }}>Region:</span> {selected.region}</span>
+                          )}
+                        </div>
+                        {analysis.error_codes && analysis.error_codes.length > 0 && (
+                          <div style={{ marginTop: '8px' }}>
+                            <strong>Error Codes:</strong>
+                            <ul style={{ marginTop: '4px' }}>
+                              {analysis.error_codes.map((code, idx) => (
+                                <li key={idx}>{code}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Two-column row: left = EscalationTimer, right = EscalationJourney */}
+                    <div style={{ display: 'flex', flexDirection: 'row', gap: '24px', marginTop: '32px' }}>
+                      <div style={{ flex: 1, minWidth: '220px', maxWidth: '320px', display: 'flex', alignItems: 'stretch' }}>
+                        <EscalationTimer ticket={selected} />
+                      </div>
+                      <div style={{ flex: 2, minWidth: '220px', maxWidth: '600px', display: 'flex', alignItems: 'center' }}>
+                        <EscalationJourney ticket={selected} slaMs={3 * 60 * 60 * 1000} />
+                      </div>
+                    </div>
+                  </div>
                   <div className="analysis-grid">
-                    <div className="card accent-mint">
+                    {/* <div className="card accent-mint">
                       <h3>Possible Root Cause</h3>
                       <div
                         className="rich-text"
@@ -624,71 +913,146 @@ export default function App() {
                           __html: renderPreview(analysis.root_cause)
                         }}
                       />
-                    </div>
+                    </div> */}
                     <div className="card accent-sun">
                       <h3>Recommended Steps</h3>
-                      <div
-                        className="rich-text"
-                        dangerouslySetInnerHTML={{
-                          __html: renderPreview(analysis.recommendation)
-                        }}
-                      />
+                      {resolution && Array.isArray(resolution.recommendedsteps) && resolution.recommendedsteps.length > 0 ? (
+                        <div style={{ margin: '12px 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {resolution.recommendedsteps.map((stepObj, idx) => (
+                            <div key={idx} style={{ background: idx % 2 === 0 ? '#f7f7fa' : '#ede7f6', borderRadius: '6px', padding: '10px 14px', fontSize: '15px', color: '#222', border: '1px solid #e0e0e0', marginBottom: '2px', minHeight: '48px', display: 'flex', flexDirection: 'column' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
+                                <span style={{ fontWeight: 600, fontSize: '15px', marginRight: '12px' }}>{stepObj.title}</span>
+                                <span
+                                  style={{
+                                    display: 'inline-block',
+                                    marginLeft: '6px',
+                                    cursor: 'pointer',
+                                    color: '#1976d2',
+                                    fontSize: '16px',
+                                    fontWeight: 700
+                                  }}
+                                  title={stepObj.justification}
+                                >&#9432;</span>
+                                <span style={{ marginLeft: 'auto', fontWeight: 600, color: '#388e3c', fontSize: '15px' }}>{stepObj.confidence_score}% Confidence</span>
+                              </div>
+                              <div style={{ fontWeight: 400, fontSize: '16px', marginBottom: '4px', color: '#888', fontFamily: 'Segoe UI, Roboto, Arial, sans-serif' }}> {stepObj.description}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rich-text">No recommended steps available.</div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="card bordered-card web-solutions">
-                    <h3>Web Solutions</h3>
-                    {analysis.web_solutions?.length ? (
-                      <div className="web-solution-list">
-                        {analysis.web_solutions.map((item, index) => (
-                          <div key={`${item.url}-${index}`} className="web-solution-item">
-                            <div className="web-solution-title">{item.title}</div>
-                            <a className="web-solution-link" href={item.url} target="_blank" rel="noreferrer">
-                              {item.url}
-                            </a>
-                            {item.summary && (
-                              <div className="web-solution-summary">{item.summary}</div>
-                            )}
-                            {item.steps?.length > 0 && (
-                              <ol className="web-solution-steps">
-                                {item.steps.map((step, stepIndex) => (
-                                  <li key={`${item.url}-step-${stepIndex}`}>{step}</li>
-                                ))}
-                              </ol>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
+                  {/*<div className="card bordered-card web-solutions">
+                      <h3>Web Solutions</h3>
+                      {analysis.web_solutions?.length ? (
+                        <div className="web-solution-list">
+                          {analysis.web_solutions.map((item, index) => (
+                            <div key={`${item.url}-${index}`} className="web-solution-item">
+                              <div className="web-solution-title">{item.title}</div>
+                              <a className="web-solution-link" href={item.url} target="_blank" rel="noreferrer">
+                                {item.url}
+                              </a>
+                              {item.summary && (
+                                <div className="web-solution-summary">{item.summary}</div>
+                              )}
+                              {item.steps?.length > 0 && (
+                                <ol className="web-solution-steps">
+                                  {item.steps.map((step, stepIndex) => (
+                                    <li key={`${item.url}-step-${stepIndex}`}>{step}</li>
+                                  ))}
+                                </ol>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null} 
                       <div className="empty">
                         No web solutions found.
                         <div className="empty-note">
                           Try analyzing the ticket again or check your search configuration.
                         </div>
                       </div>
-                    )}
-                  </div>
+                  </div> */}
 
                   <div className="card bordered-card">
-                    <h3>Similar Tickets</h3>
-                    {analysis.similar_resolutions?.length ? (
-                      <ul className="similar-list">
-                        {analysis.similar_resolutions.map((item) => (
-                          <li key={item.resolution_id}>
-                            <div className="meta">Ticket: {item.ticket_id}</div>
-                            <div className="body">{item.resolution_text}</div>
-                            {item.root_cause ? (
-                              <div className="meta">Cause: {item.root_cause}</div>
-                            ) : null}
-                          </li>
+                                        {/* Incident Trends Bar Graph */}
+                                        <div style={{ marginBottom: '18px', padding: '8px 0' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                                            <strong>Similar Incident Trends</strong>
+                                            <select value={trendRange} onChange={e => setTrendRange(Number(e.target.value))} style={{ fontSize: '15px', marginLeft: '8px' }}>
+                                              <option value={1}>24 hrs</option>
+                                              <option value={7}>7 days</option>
+                                              <option value={15}>15 days</option>
+                                              <option value={30}>30 days</option>
+                                            </select>
+                                          </div>
+                                          <Bar
+                                            data={{
+                                              labels: getIncidentTrendData().labels,
+                                              datasets: [{
+                                                label: 'Similar Incidents',
+                                                data: getIncidentTrendData().data,
+                                                backgroundColor: '#7c4dff',
+                                                barPercentage: 0.15,
+                                                categoryPercentage: 0.3
+                                              }]
+                                            }}
+                                            options={{
+                                              responsive: true,
+                                              plugins: {
+                                                legend: { display: false },
+                                                tooltip: { enabled: true }
+                                              },
+                                              layout: { padding: 10 },
+                                              scales: {
+                                                x: {
+                                                  title: { display: true, text: 'Date' },
+                                                  barPercentage: 0.15,
+                                                  categoryPercentage: 0.3
+                                                },
+                                                y: {
+                                                  title: { display: true, text: 'Count' },
+                                                  beginAtZero: true,
+                                                  ticks: {
+                                                    stepSize: 1,
+                                                    precision: 0
+                                                  }
+                                                }
+                                              }
+                                            }}
+                                            height={100}
+                                          />
+                                        </div>
+                    <h3>
+                      Historical Match Analysis
+                      {resolution && typeof resolution.total_similar_tickets_above70 === 'number' ? (
+                        <span style={{ fontSize: '15px', fontWeight: 500, color: '#7c4dff', marginLeft: '16px' }}>
+                          {`${resolution.total_similar_tickets_above70} matches found (>=70% similarity)`}
+                        </span>
+                      ) : null}
+                    </h3>
+                    {/* Display each outcome record as a subtle, professional block, showing user name/email and creation date */}
+                    {resolution && resolution.outcome && Array.isArray(resolution.outcome) && resolution.outcome.length > 0 ? (
+                      <div style={{ margin: '12px 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {resolution.outcome.map((item, idx) => (
+                          <div key={item.ticket_id || idx} style={{ background: idx % 2 === 0 ? '#f7f7fa' : '#ede7f6', borderRadius: '6px', padding: '10px 14px', fontSize: '15px', color: '#222', border: '1px solid #e0e0e0', marginBottom: '2px', minHeight: '48px', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
+                              <span style={{ fontWeight: 600, fontSize: '15px', marginRight: '12px' }}>{item.ticket_id}</span>
+                              <span style={{ fontWeight: 600, color: '#388e3c', fontSize: '15px', marginLeft: '24px' }}>{item.similarity}% match</span>
+                            </div>
+                            <div style={{ fontWeight: 400, fontSize: '16px', marginBottom: '4px' }}>{item.title}</div>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     ) : (
-                      <div className="empty">No similar resolutions found.</div>
+                      <div className="empty">No similar tickets found.</div>
                     )}
                   </div>
 
-                  <div className="card bordered-card">
+                  {/* <div className="card bordered-card">
                     <div className="email-header">
                       <h3>Draft Email</h3>
                       <div className="email-tabs">
@@ -815,7 +1179,7 @@ export default function App() {
                         </button>
                       </>
                     )}
-                  </div>
+                  </div> */}
                 </div>
               ) : (
                 <div className="empty">Run analysis to see similar tickets.</div>
