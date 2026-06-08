@@ -1,2 +1,6 @@
 node_modules/
 frontend/node_modules/
+servicenow_sync/.env
+servicenow_sync/.tunnel_url
+servicenow_sync/__pycache__/
+servicenow_sync/*.log
