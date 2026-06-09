@@ -8,3 +8,4 @@ pgvector==0.4.2
 psycopg2-binary==2.9.11
 redis>=5.0.0
 python-dotenv==1.2.1
+openai>=1.40.0  # real Routing agent (gpt-4o via Azure OpenAI)
