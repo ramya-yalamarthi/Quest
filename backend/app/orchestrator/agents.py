@@ -57,40 +57,26 @@ class RoutingAgent:
 
         if not result or "correct_team" not in result:
             return {
-                "title": "Assignment check",
                 "assigned_team": assigned,
                 "assignment_correct": None,
                 "recommended_team": "Unknown",
-                "mismatch": False,
-                "confidence": 0.0,
+                "confidence": "0%",
                 "reasoning": "LLM not configured - could not validate assignment.",
-                "verdict": "Could not validate (no LLM).",
-                "source": "fallback",
             }
 
         correct_team = str(result.get("correct_team", "Unknown")).strip()
         try:
-            conf = round(float(result.get("confidence", 0) or 0), 2)
+            conf = float(result.get("confidence", 0) or 0)
         except (TypeError, ValueError):
             conf = 0.0
-
         is_correct = assigned.strip().lower() == correct_team.lower()
-        if is_correct:
-            verdict = f"Assignment to '{assigned}' is CORRECT for this issue."
-        else:
-            verdict = (f"Assignment looks WRONG: this is a {correct_team} issue, "
-                       f"not {assigned}. Recommend reassigning to {correct_team}.")
 
         return {
-            "title": "Assignment validation",
             "assigned_team": assigned,
             "assignment_correct": is_correct,
-            "recommended_team": correct_team,        # = assigned when correct
-            "mismatch": not is_correct,              # kept for the reassign-on-accept logic
-            "confidence": conf,
+            "recommended_team": correct_team,
+            "confidence": f"{int(round(conf * 100))}%",
             "reasoning": result.get("reasoning", ""),
-            "verdict": verdict,
-            "source": "gpt-4o",
         }
 
 
