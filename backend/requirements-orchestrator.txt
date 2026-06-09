@@ -7,3 +7,4 @@ SQLAlchemy==2.0.47
 pgvector==0.4.2
 psycopg2-binary==2.9.11
 redis>=5.0.0
+python-dotenv==1.2.1
