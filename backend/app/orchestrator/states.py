@@ -24,7 +24,7 @@ class TicketState(str, Enum):
 
 # Which agents run for each event type, in order (the core routing rule, O-01).
 PIPELINES: dict[EventType, list[str]] = {
-    EventType.CREATE: ["routing"],
+    EventType.CREATE: ["routing", "diagnosis"],
     EventType.TRANSFER: ["routing", "diagnosis"],
     EventType.REACTIVATE: ["routing", "diagnosis", "recommendation"],
 }

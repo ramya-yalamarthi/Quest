@@ -23,11 +23,13 @@ def test_classify_explicit_and_inferred():
     assert classify_event({}) == EventType.CREATE
 
 
-def test_create_runs_routing_only():
+def test_create_runs_routing_then_diagnosis():
     orch = _fresh()
     rec = orch.handle_event({"event_id": "a", "event_type": "create", "ticket_id": "t-create"})
-    assert rec.pipeline == ["routing"]
-    rec = orch.handle_decision("t-create", "accept")
+    assert rec.pipeline == ["routing", "diagnosis"]
+    rec = orch.handle_decision("t-create", "accept")   # routing -> diagnosis
+    assert rec.current_agent == "diagnosis"
+    rec = orch.handle_decision("t-create", "accept")   # diagnosis -> DONE
     assert rec.state == TicketState.DONE.value
 
 
