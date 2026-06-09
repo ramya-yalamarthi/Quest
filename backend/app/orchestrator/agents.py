@@ -46,9 +46,12 @@ class RoutingAgent:
     def run(self, context: dict) -> dict:
         ticket = context.get("ticket", {}) or {}
         payload = (context.get("event", {}) or {}).get("payload", {}) or {}
-        title = ticket.get("title") or payload.get("title") or ""
-        desc = ticket.get("description") or payload.get("description") or ""
-        assigned = ticket.get("assigned_team") or payload.get("assigned_team") or "Unknown"
+        # Prefer the real event payload (from ServiceNow) over the MCP ticket,
+        # since the MCP client is still a mock. When the real MCP service is
+        # connected, ticket_context_fetch will return authoritative ticket data.
+        title = payload.get("title") or ticket.get("title") or ""
+        desc = payload.get("description") or ticket.get("description") or ""
+        assigned = payload.get("assigned_team") or ticket.get("assigned_team") or "Unknown"
 
         result = chat_json(
             _ROUTING_SYSTEM,
