@@ -19,67 +19,77 @@ class Agent(Protocol):
 # ---------------------------------------------------------------------------
 # Routing Agent (UC1) -- REAL: classifies the ticket into a support team.
 # ---------------------------------------------------------------------------
-TEAMS = {
-    "Networking": "connectivity, VPN, DNS, firewall, routing, load balancers, inter-site latency",
-    "Storage": "disks/volumes, blob/object storage, IOPS/throughput, storage latency, capacity, backups",
-    "Integration": "APIs, webhooks, message queues, ETL/data pipelines, third-party syncs",
-    "Identity": "authentication, SSO, login, MFA, RBAC/permissions, account lockouts, tokens/certs",
-}
+# Reference tickets (closed). The classifier matches a NEW ticket against ONLY
+# these and assigns it to the best-matching reference ticket's team.
+REFERENCE_TICKETS = [
+    {"number": "INC0010723", "team": "Software",
+     "summary": "Windows laptop fails to boot after an OS update; reboots into a recovery loop and never reaches the login screen."},
+    {"number": "INC0010724", "team": "Database",
+     "summary": "Production MS SQL Server is unresponsive and not accepting new connections; applications return 'connection timeout expired'."},
+    {"number": "INC0010725", "team": "Network",
+     "summary": "User cannot connect to corporate VPN; client accepts username/password and MFA but then drops with 'negotiation failed'."},
+    {"number": "INC0010726", "team": "Hardware",
+     "summary": "Workstation overheating and shutting down under load; CPU pinned at 100% with high temperatures."},
+]
+
+_REF_BLOCK = "\n".join(
+    f"- {t['number']} [team: {t['team']}]: {t['summary']}" for t in REFERENCE_TICKETS
+)
+_REF_TEAMS = sorted({t["team"] for t in REFERENCE_TICKETS})
 
 _ROUTING_SYSTEM = (
-    "You are an IT support ticket ASSIGNMENT VALIDATOR. A user has created a ticket and "
-    "assigned it to a team. Decide which single team SHOULD own the ticket based only on "
-    "the issue described. Teams and what they handle: "
-    + "; ".join(f"{k} = {v}" for k, v in TEAMS.items())
-    + ". Respond ONLY as a JSON object with keys: "
-    '"correct_team" (one of Networking, Storage, Integration, Identity), '
-    '"confidence" (number 0-1), "reasoning" (one short sentence explaining why).'
+    "You are an IT support ticket ASSIGNMENT VALIDATOR. Classify the NEW ticket by "
+    "matching it to the MOST SIMILAR reference ticket below, and recommend that reference "
+    "ticket's team. You MUST choose the team ONLY from the reference tickets "
+    f"({', '.join(_REF_TEAMS)}); do not invent or use any other team.\n\n"
+    "REFERENCE TICKETS:\n" + _REF_BLOCK +
+    '\n\nRespond ONLY as a JSON object with keys: '
+    '"recommended_team" (team of the best-matching reference ticket), '
+    '"reference" (that reference ticket number), '
+    '"confidence" (number 0-1), "reasoning" (one short sentence).'
 )
 
 
 class RoutingAgent:
-    """UC1 - validates whether a ticket is assigned to the right team and, if not,
-    recommends the correct team. LLM-powered (gpt-4o) with a safe fallback."""
+    """UC1 - validates a ticket's team assignment by matching it against a fixed
+    set of reference tickets. LLM-powered (gpt-4o) with a safe fallback."""
 
     name = "routing"
 
     def run(self, context: dict) -> dict:
         ticket = context.get("ticket", {}) or {}
         payload = (context.get("event", {}) or {}).get("payload", {}) or {}
-        # Prefer the real event payload (from ServiceNow) over the MCP ticket,
-        # since the MCP client is still a mock. When the real MCP service is
-        # connected, ticket_context_fetch will return authoritative ticket data.
+        # Prefer the real event payload (from ServiceNow) over the MCP mock.
         title = payload.get("title") or ticket.get("title") or ""
         desc = payload.get("description") or ticket.get("description") or ""
         assigned = payload.get("assigned_team") or ticket.get("assigned_team") or "Unknown"
 
-        result = chat_json(
-            _ROUTING_SYSTEM,
-            f"Ticket title: {title}\nDescription: {desc}\nUser-assigned team: {assigned}",
-        )
+        result = chat_json(_ROUTING_SYSTEM, f"NEW ticket title: {title}\nDescription: {desc}")
 
-        if not result or "correct_team" not in result:
+        if not result or "recommended_team" not in result:
             return {
                 "assigned_team": assigned,
                 "assignment_correct": None,
                 "recommended_team": "Unknown",
                 "confidence": "0%",
                 "reasoning": "LLM not configured - could not validate assignment.",
+                "reference": "",
             }
 
-        correct_team = str(result.get("correct_team", "Unknown")).strip()
+        rec = str(result.get("recommended_team", "Unknown")).strip()
         try:
             conf = float(result.get("confidence", 0) or 0)
         except (TypeError, ValueError):
             conf = 0.0
-        is_correct = assigned.strip().lower() == correct_team.lower()
+        is_correct = assigned.strip().lower() == rec.lower()
 
         return {
             "assigned_team": assigned,
             "assignment_correct": is_correct,
-            "recommended_team": correct_team,
+            "recommended_team": rec,
             "confidence": f"{int(round(conf * 100))}%",
             "reasoning": result.get("reasoning", ""),
+            "reference": result.get("reference", ""),
         }
 
 
