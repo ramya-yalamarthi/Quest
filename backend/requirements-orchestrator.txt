@@ -1,0 +1,9 @@
+# Slim dependencies for deploying ONLY the orchestrator API (orchestrator_server.py).
+# Excludes the heavy ML libs (torch / sentence-transformers / openai) that the
+# full app needs but the orchestrator does not -> fast, small deploy.
+fastapi==0.133.1
+uvicorn==0.41.0
+SQLAlchemy==2.0.47
+pgvector==0.4.2
+psycopg2-binary==2.9.11
+redis>=5.0.0
