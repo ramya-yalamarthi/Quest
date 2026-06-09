@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Tuple, List, Optional, Dict
 from openai import AzureOpenAI
@@ -254,6 +255,99 @@ def summarize_steps_from_snippet(
             return []
 
     return steps[:max_steps]
+
+
+def generate_incident_brief(
+    title: str,
+    description: str,
+    summary: str,
+    priority: str,
+    service: str,
+    env: str,
+    region: str,
+    status: str,
+    created_at: str,
+    assigned_at: Optional[str],
+    root_cause: Optional[str],
+    similar_count: int,
+    recommended_steps: List[dict],
+) -> dict:
+    """Generate a structured incident brief (IcM-style) for a support ticket."""
+    steps_text = "\n".join(
+        f"- {s.get('title', '')}: {s.get('description', '')}"
+        for s in (recommended_steps or [])[:4]
+    ) or "None yet — run analysis to generate."
+
+    prompt = (
+        "You are a support incident analysis assistant. Produce a structured incident brief "
+        "for the following support ticket. Be specific and factual — do NOT invent data. "
+        "Use only the information provided below.\n\n"
+        f"Title: {title}\n"
+        f"Description: {description}\n"
+        f"AI Summary: {summary}\n"
+        f"Priority: {priority} | Service: {service} | Environment: {env} | Region: {region}\n"
+        f"Status: {status}\n"
+        f"Opened at: {created_at}\n"
+        f"Assigned at: {assigned_at or 'Not yet assigned'}\n"
+        f"Root cause: {root_cause or 'Under investigation'}\n"
+        f"Similar historical incidents found: {similar_count}\n"
+        f"Recommended steps:\n{steps_text}\n\n"
+        "Return ONLY valid JSON — no markdown fences, no commentary:\n"
+        "{\n"
+        '  "what_we_know": ["<bullet 1>", "<bullet 2>", ...],\n'
+        '  "what_has_been_done": ["<bullet 1>", "<bullet 2>", ...],\n'
+        '  "recommended_actions": [\n'
+        '    {"title": "<short title>", "detail": "<one-line detail>"},\n'
+        '    ...\n'
+        "  ]\n"
+        "}\n\n"
+        "Rules:\n"
+        "- what_we_know: 4–6 bullets covering impact (service/env/region/priority), "
+        "the core problem, root cause status, and similar-incident count.\n"
+        "- what_has_been_done: 3–5 bullets on ticket lifecycle actions taken so far "
+        "(opened, assigned, analysis run, steps generated, communications).\n"
+        "- recommended_actions: exactly 3 numbered actions derived strictly from the "
+        "recommended steps or standard triage next steps.\n"
+        "- Start any bullet that has a label with the label followed by a colon, e.g. "
+        '"Impact: 1 service (Analytics Pipeline), Production, US-West-2, Priority Normal."'
+    )
+
+    text = _client.complete(
+        system_prompt="You are a precise incident management assistant. Return only valid JSON.",
+        user_prompt=prompt,
+        temperature=0.2,
+        max_tokens=900,
+    )
+
+    # Strip markdown code fences if the model added them
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        parts = cleaned.split("```")
+        cleaned = parts[1] if len(parts) > 1 else cleaned
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        return {
+            "what_we_know": [
+                f"Impact: {service}, {env}, {region}, Priority {priority}",
+                f"Issue: {title}",
+                f"Root cause: {root_cause or 'Under investigation'}",
+                f"Similar historical incidents: {similar_count}",
+            ],
+            "what_has_been_done": [
+                f"Ticket opened at {created_at}",
+                f"Assigned at: {assigned_at or 'Not yet assigned'}",
+                f"Status: {status}",
+            ],
+            "recommended_actions": [
+                {"title": "Run Analysis", "detail": "Click 'Analyze Ticket' to generate AI-powered recommendations."},
+                {"title": "Check Similar Incidents", "detail": f"{similar_count} historical matches found — review for known fixes."},
+                {"title": "Review Root Cause", "detail": root_cause or "Investigation ongoing."},
+            ],
+        }
 
 
 def improve_email_draft(subject: str, body: str) -> Tuple[str, str]:

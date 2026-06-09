@@ -137,6 +137,145 @@ function EscalationJourney({ ticket, slaMs }) {
   );
 }
 
+// IcM-style Incident Brief component — auto-loads when a ticket is opened
+function IncidentBrief({ brief, loading }) {
+  const containerStyle = {
+    background: '#ffffff',
+    border: '1px solid #e0e0e0',
+    borderRadius: '4px',
+    padding: '20px 24px 16px',
+    marginBottom: '20px',
+    fontFamily: '"Segoe UI", system-ui, sans-serif',
+  };
+
+  if (loading) {
+    return (
+      <div style={containerStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <span style={{ fontSize: '16px', color: '#5c6bc0', fontWeight: 700 }}>✦</span>
+          <span style={{ fontSize: '15px', fontWeight: 600, color: '#1a1a1a' }}>AI summary by IcM Assistant</span>
+        </div>
+        <div style={{ color: '#888', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+          <span className="spinner" style={{ width: '13px', height: '13px', borderWidth: '2px' }} />
+          Generating AI summary...
+        </div>
+      </div>
+    );
+  }
+
+  if (!brief) return null;
+
+  const fmtTime = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+    });
+  };
+
+  return (
+    <div style={containerStyle}>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '2px' }}>
+        <span style={{ fontSize: '16px', color: '#5c6bc0', fontWeight: 700 }}>✦</span>
+        <span style={{ fontSize: '15px', fontWeight: 600, color: '#1a1a1a' }}>AI summary by IcM Assistant</span>
+      </div>
+
+      {/* ── Timestamp ── */}
+      {brief.generated_at && (
+        <div style={{ fontSize: '12px', color: '#888', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ fontSize: '13px' }}>⊙</span>
+          <span>Last updated at {fmtTime(brief.generated_at)}</span>
+        </div>
+      )}
+
+      {/* ── Horizontal rule ── */}
+      <div style={{ borderTop: '1px solid #e8e8e8', marginBottom: '16px' }} />
+
+      {/* ── Two-column body ── */}
+      <div style={{ display: 'flex', gap: '0', alignItems: 'flex-start' }}>
+
+        {/* Left column */}
+        <div style={{ flex: '0 0 62%', paddingRight: '32px' }}>
+
+          {/* What we know */}
+          <div style={{ marginBottom: '18px' }}>
+            <p style={{ margin: '0 0 8px', fontWeight: 700, fontSize: '14px', color: '#1a1a1a' }}>
+              What we know:
+            </p>
+            <ul style={{ margin: 0, paddingLeft: '20px', lineHeight: 1.75 }}>
+              {(brief.what_we_know || []).map((item, i) => {
+                const colonIdx = item.indexOf(':');
+                const hasLabel = colonIdx > 0 && colonIdx < 30;
+                return (
+                  <li key={i} style={{ fontSize: '13.5px', color: '#222', marginBottom: '2px' }}>
+                    {hasLabel ? (
+                      <><strong>{item.slice(0, colonIdx)}</strong>:{item.slice(colonIdx + 1)}</>
+                    ) : item}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {/* What has been done */}
+          <div>
+            <p style={{ margin: '0 0 8px', fontWeight: 700, fontSize: '14px', color: '#1a1a1a' }}>
+              What has been done so far:
+            </p>
+            <ul style={{ margin: 0, paddingLeft: '20px', lineHeight: 1.75 }}>
+              {(brief.what_has_been_done || []).map((item, i) => (
+                <li key={i} style={{ fontSize: '13.5px', color: '#222', marginBottom: '2px' }}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Vertical divider */}
+        <div style={{ width: '1px', background: '#e0e0e0', alignSelf: 'stretch', flexShrink: 0 }} />
+
+        {/* Right column */}
+        <div style={{ flex: '0 0 38%', paddingLeft: '28px' }}>
+          <p style={{
+            margin: '0 0 12px',
+            fontSize: '14px',
+            fontWeight: 600,
+            color: '#1a1a1a',
+            borderBottom: '1px dashed #aaa',
+            paddingBottom: '4px',
+            display: 'inline-block',
+          }}>
+            Recommended actions
+          </p>
+          <ol style={{ margin: 0, paddingLeft: '16px', lineHeight: 1.75 }}>
+            {(brief.recommended_actions || []).map((action, i) => (
+              <li key={i} style={{ fontSize: '13.5px', color: '#222', marginBottom: '10px' }}>
+                <strong>{action.title}:</strong>{' '}
+                <span style={{ color: '#333' }}>{action.detail}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+
+      {/* ── Footer ── */}
+      <div style={{ borderTop: '1px solid #e8e8e8', marginTop: '16px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>AI-generated content may be incorrect</span>
+          <button onClick={() => {}} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '0 2px', color: '#555' }} title="Helpful">👍</button>
+          <button onClick={() => {}} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '0 2px', color: '#555' }} title="Not helpful">👎</button>
+        </div>
+        <div style={{ fontSize: '12px', color: '#888', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>Are these actions useful?</span>
+          <button onClick={() => {}} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '0 2px', color: '#555' }} title="Yes">👍</button>
+          <button onClick={() => {}} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '0 2px', color: '#555' }} title="No">👎</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bar } from "react-chartjs-2";
 import { Chart, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from "chart.js";
@@ -193,6 +332,8 @@ export default function App() {
   const [{ token, user }, setAuth] = useState(initialAuth);
   const [tickets, setTickets] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [incidentBrief, setIncidentBrief] = useState(null);
+  const [briefLoading, setBriefLoading] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [draft, setDraft] = useState(null);
   const [draftOriginal, setDraftOriginal] = useState(null);
@@ -281,6 +422,23 @@ export default function App() {
       });
   }, [selected, token]);
 
+  // Auto-load incident brief when ticket is selected
+  useEffect(() => {
+    if (!selected || !token) return;
+    setBriefLoading(true);
+    setIncidentBrief(null);
+    fetch(`${API_BASE}/tickets/${selected.ticket_id}/incident-brief`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('brief fetch failed');
+        return res.json();
+      })
+      .then(data => setIncidentBrief(data))
+      .catch(err => console.debug('Incident brief unavailable:', err))
+      .finally(() => setBriefLoading(false));
+  }, [selected, token]);
+
   // Auto-clear message after 2 seconds
   useEffect(() => {
     if (message) {
@@ -315,6 +473,7 @@ export default function App() {
     setAuth({ token: null, user: null });
     setTickets([]);
     setSelected(null);
+    setIncidentBrief(null);
     setAnalysis(null);
     setDraft(null);
     setDraftOriginal(null);
@@ -842,6 +1001,9 @@ export default function App() {
                   ) : null}
                 </div>
               </div>
+
+              {/* Incident Brief — shown immediately on ticket open */}
+              <IncidentBrief brief={incidentBrief} loading={briefLoading} />
 
               {analysis ? (
                 <div className="analysis">

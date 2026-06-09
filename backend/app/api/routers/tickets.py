@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -78,6 +79,79 @@ def update_status(ticket_id: UUID, payload: TicketStatusRequest, db: Session = D
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     return t
+
+
+class IncidentBriefAction(BaseModel):
+    title: str
+    detail: str
+
+
+class IncidentBriefOut(BaseModel):
+    what_we_know: list[str]
+    what_has_been_done: list[str]
+    recommended_actions: list[IncidentBriefAction]
+    generated_at: str
+
+
+@router.get("/{ticket_id}/incident-brief", response_model=IncidentBriefOut)
+def get_incident_brief(
+    ticket_id: UUID,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    from app.utils.llm import generate_incident_brief
+
+    t = tools.get_ticket(db, ticket_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if current["role"] == "REQUESTER" and t.created_by != UUID(current["user_id"]):
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    resolution = db.query(Resolution).filter(Resolution.ticket_id == ticket_id).first()
+
+    similar_count = 0
+    recommended_steps = []
+    root_cause = None
+
+    if resolution:
+        root_cause = resolution.root_cause
+        if isinstance(resolution.outcome, list):
+            similar_count = len(resolution.outcome)
+        if isinstance(resolution.recommendedsteps, list):
+            recommended_steps = resolution.recommendedsteps
+
+    brief = generate_incident_brief(
+        title=t.title,
+        description=t.description,
+        summary=t.ticket_summary or "",
+        priority=t.priority or "Normal",
+        service=t.service or "General",
+        env=t.env or "Production",
+        region=t.region or "Unknown",
+        status=t.status,
+        created_at=t.created_at.isoformat() if t.created_at else "",
+        assigned_at=t.assigned_at.isoformat() if t.assigned_at else None,
+        root_cause=root_cause,
+        similar_count=similar_count,
+        recommended_steps=recommended_steps,
+    )
+
+    # Normalise recommended_actions to IncidentBriefAction shape
+    actions = []
+    for item in brief.get("recommended_actions", []):
+        if isinstance(item, dict):
+            actions.append(IncidentBriefAction(
+                title=item.get("title", ""),
+                detail=item.get("detail", ""),
+            ))
+
+    return IncidentBriefOut(
+        what_we_know=brief.get("what_we_know", []),
+        what_has_been_done=brief.get("what_has_been_done", []),
+        recommended_actions=actions,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 class WebSolution(BaseModel):
