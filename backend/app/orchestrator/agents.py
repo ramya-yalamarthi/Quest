@@ -101,7 +101,8 @@ _DIAGNOSIS_SYSTEM = (
     '\n\nRespond ONLY as a JSON object with keys: '
     '"reference" (the matched reference ticket number, e.g. INC0010724), '
     '"root_cause" (one short sentence), '
-    '"reasoning" (one short sentence on why the new ticket matches that reference).'
+    '"reasoning" (one short sentence describing the matching symptoms only; '
+    'do NOT mention any ticket number in the reasoning).'
 )
 
 
