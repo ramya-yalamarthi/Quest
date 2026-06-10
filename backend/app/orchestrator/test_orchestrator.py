@@ -7,13 +7,74 @@ Run either way:
     pytest app/orchestrator/test_orchestrator.py       # if pytest installed
 """
 
+import app.orchestrator.agents as agents_mod
 from app.orchestrator.orchestrator import Orchestrator
 from app.orchestrator.events import EventType, classify_event
 from app.orchestrator.states import TicketState
+from app.orchestrator.agents import (
+    RecommendationAgent,
+    recommendation_to_resolution_payload,
+)
+from app.orchestrator.trusted_sources import is_trusted
 
 
 def _fresh() -> Orchestrator:
     return Orchestrator()
+
+
+# --- Recommendation Agent (UC3) test helpers --------------------------------
+
+def _ctx(prior=None, title="Production SQL Server unresponsive",
+         desc="Applications return 'connection timeout expired'."):
+    ctx = {"ticket": {}, "event": {"type": "reactivate",
+            "payload": {"ticket_id": "t-rec", "title": title, "description": desc}}}
+    if prior is not None:
+        ctx["prior_resolution"] = prior
+    return ctx
+
+
+def _full_llm_result(rct="db_connection_exhaustion", cm=False):
+    return {
+        "reference": "INC0010724",
+        "root_cause": "Connection pool exhausted under load.",
+        "root_cause_type": rct,
+        "delta": {
+            "what_changed": "Peak load higher than during the last incident.",
+            "prior_fix_summary": "Restarted the SQL service to clear sessions.",
+            "prior_fix_gap": "Restart cleared sessions but the pool limit was never raised.",
+            "original_fix_held": False,
+            "recurrence_pattern": "weekly under peak load",
+            "delta_severity": "high",
+        },
+        "immediate_action": {"summary": "Recycle the app connection pool",
+                             "steps": ["Restart the app pool"], "eta_minutes": 25},
+        "durable_fix": {"summary": "Raise pool size and add leak detection",
+                        "steps": ["Tune max pool size"], "eta_hours": 5,
+                        "requires_change_mgmt": cm, "cm_justification": ""},
+        "reasoning": "Symptoms match database connection exhaustion.",
+        "confidence": 0.7,
+    }
+
+
+class _patch_llm:
+    """Temporarily replace agents_mod.chat_json (and optionally get_prevention)."""
+    def __init__(self, result, prevention=None):
+        self._result = result
+        self._prevention = prevention
+
+    def __enter__(self):
+        self._orig_chat = agents_mod.chat_json
+        agents_mod.chat_json = lambda system, user, **kw: self._result
+        if self._prevention is not None:
+            self._orig_prev = agents_mod.get_prevention
+            agents_mod.get_prevention = lambda rct: self._prevention
+        return self
+
+    def __exit__(self, *exc):
+        agents_mod.chat_json = self._orig_chat
+        if self._prevention is not None:
+            agents_mod.get_prevention = self._orig_prev
+        return False
 
 
 def test_classify_explicit_and_inferred():
@@ -85,6 +146,114 @@ def test_missing_ticket_id_raises():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_recommendation_output_has_full_shape():
+    with _patch_llm(_full_llm_result()):
+        out = RecommendationAgent().run(_ctx(prior={"resolution_text": "Restarted SQL.",
+                                                    "root_cause": "pool exhausted"}))
+    # delta incl. the core prior_fix_gap field
+    assert out["delta"]["prior_fix_gap"]
+    # both tracks
+    assert out["immediate_action"]["eta_minutes"] == 25
+    assert out["durable_fix"]["eta_hours"] == 5
+    assert "requires_change_mgmt" in out["durable_fix"]            # CM flag present
+    # prevention + links + resolution fields + confidence
+    assert out["prevention"]["root_cause_type"] == "db_connection_exhaustion"
+    assert out["prevention"]["actions"] and out["prevention"]["monitoring_rule"]
+    assert isinstance(out["trusted_links"], list) and out["trusted_links"]
+    assert out["resolution_text"] and out["root_cause"] and out["reasoning"]
+    assert isinstance(out["outcome"], list)
+    assert 0.0 <= out["confidence"] <= 1.0
+    assert out["reference"] == "INC0010724" and out["reference_link"]
+
+
+def test_recommendation_prior_present_vs_absent():
+    # absent -> graceful "no prior resolution" delta (fallback path, LLM off)
+    with _patch_llm(None):
+        absent = RecommendationAgent().run(_ctx(prior=None))
+    assert "no prior resolution" in absent["delta"]["prior_fix_gap"].lower()
+    # present -> prior summary reflected in the delta
+    with _patch_llm(None):
+        present = RecommendationAgent().run(
+            _ctx(prior={"resolution_text": "Bounced the service", "root_cause": "stale sessions"}))
+    assert "bounced the service" in present["delta"]["prior_fix_summary"].lower()
+
+
+def test_recommendation_llm_unavailable_fallback_no_crash():
+    with _patch_llm(None):
+        out = RecommendationAgent().run(_ctx())
+    # full advisory shape even with no LLM
+    for key in ("delta", "immediate_action", "durable_fix", "prevention",
+                "trusted_links", "resolution_text", "confidence"):
+        assert key in out
+
+
+def test_recommendation_unknown_root_cause_type_falls_back_to_config_drift():
+    with _patch_llm(_full_llm_result(rct="totally_made_up_key")):
+        out = RecommendationAgent().run(_ctx())
+    assert out["prevention"]["root_cause_type"] == "config_drift"
+    # config_drift is a CM-required type -> backstop forces the flag True
+    assert out["durable_fix"]["requires_change_mgmt"] is True
+
+
+def test_recommendation_cm_backstop():
+    # high-impact type with the LLM saying False -> forced True
+    with _patch_llm(_full_llm_result(rct="db_storage_full", cm=False)):
+        out = RecommendationAgent().run(_ctx())
+    assert out["durable_fix"]["requires_change_mgmt"] is True
+    # non-CM type stays False
+    with _patch_llm(_full_llm_result(rct="hardware_thermal", cm=False)):
+        out2 = RecommendationAgent().run(_ctx())
+    assert out2["durable_fix"]["requires_change_mgmt"] is False
+
+
+def test_recommendation_untrusted_links_dropped():
+    tampered = {
+        "prevention_actions": ["do x"], "monitoring_rule": "watch y",
+        "trusted_links": [
+            {"title": "good", "url": "https://learn.microsoft.com/a", "source": "Microsoft Learn"},
+            {"title": "bad", "url": "http://evil.example.com/x", "source": "spoof"},
+        ],
+    }
+    with _patch_llm(_full_llm_result(), prevention=tampered):
+        out = RecommendationAgent().run(_ctx())
+    urls = [l["url"] for l in out["trusted_links"]]
+    assert "https://learn.microsoft.com/a" in urls
+    assert all(is_trusted(u) for u in urls)            # untrusted one dropped
+    assert "http://evil.example.com/x" not in urls
+
+
+def test_recommendation_feedback_aware_confidence():
+    base = 0.6
+    likes = RecommendationAgent(feedback_stats=lambda rct: (3, 0))
+    dislikes = RecommendationAgent(feedback_stats=lambda rct: (0, 3))
+    few = RecommendationAgent(feedback_stats=lambda rct: (1, 1))
+    assert abs(likes._adjust_confidence(base, "config_drift") - 0.72) < 1e-9      # 3/0 raises
+    assert abs(dislikes._adjust_confidence(base, "config_drift") - 0.48) < 1e-9   # 0/3 lowers
+    assert abs(few._adjust_confidence(base, "config_drift") - base) < 1e-9        # <3 unchanged
+
+
+def test_recommendation_invalid_feedback_verdict_rejected():
+    from pydantic import ValidationError
+    from app.schemas.feedback import FeedbackCreate
+    import uuid
+    FeedbackCreate(ticket_id=uuid.uuid4(), verdict="like")        # valid
+    try:
+        FeedbackCreate(ticket_id=uuid.uuid4(), verdict="meh")     # invalid -> 422 at the API
+        assert False, "expected ValidationError"
+    except ValidationError:
+        pass
+
+
+def test_recommendation_to_resolution_payload_serializes_tracks():
+    with _patch_llm(_full_llm_result()):
+        out = RecommendationAgent().run(_ctx())
+    payload = recommendation_to_resolution_payload(out, ticket_id="t-rec")
+    tracks = [s["track"] for s in payload["recommendedsteps"]]
+    assert tracks == ["immediate", "durable", "prevention"]
+    assert payload["ticket_id"] == "t-rec"
+    assert payload["resolution_text"] == out["resolution_text"]
 
 
 def _main():

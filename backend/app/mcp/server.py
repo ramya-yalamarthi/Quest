@@ -144,6 +144,7 @@ class MCPServer:
         reasoning: Optional[str] = None,
         engineer_id: Optional[UUID] = None,
         is_kb: bool = False,
+        recommendedsteps: Optional[list] = None,
     ):
         """Record a resolution (called after email send or in a separate step)."""
         return self.comm.log_resolution(
@@ -154,4 +155,5 @@ class MCPServer:
             confidence=confidence,
             reasoning=reasoning,
             engineer_id=engineer_id,
+            recommendedsteps=recommendedsteps,
         )

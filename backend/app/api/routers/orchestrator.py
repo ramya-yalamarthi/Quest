@@ -10,19 +10,63 @@ REDIS_URL is unset) and writes its audit trail to Postgres ai_audit_log.
 """
 
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.orchestrator import Orchestrator, OrchestrationRecord
+from app.orchestrator.agents import default_agents
 from app.orchestrator.audit import AuditLogger
 from app.orchestrator.db_sink import postgres_audit_sink
 
 router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 
+
+def _live_prior_resolution_fetcher(ticket_id: str) -> Optional[dict]:
+    """DB-backed fetcher for the Recommendation Agent (WBS R-03): the most recent
+    resolution for this ticket. Fully optional -- any failure (no DB, non-UUID
+    ticket id, no prior row) returns None so the pipeline degrades gracefully to
+    'no prior resolution on record'.
+    """
+    try:
+        tid = UUID(str(ticket_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    try:
+        from app.db.session import SessionLocal
+        from app.db.models.resolution import Resolution
+    except Exception:
+        return None
+    db = None
+    try:
+        db = SessionLocal()
+        row = (
+            db.query(Resolution)
+            .filter(Resolution.ticket_id == tid)
+            .order_by(Resolution.created_at.desc())
+            .first()
+        )
+        if row is None:
+            return None
+        return {
+            "resolution_text": row.resolution_text,
+            "root_cause": row.root_cause,
+            "recommendedsteps": row.recommendedsteps,
+        }
+    except Exception:
+        return None
+    finally:
+        if db is not None:
+            db.close()
+
+
 # One supervisor for the app: state store is shared (Redis/in-memory),
 # audit goes to Postgres ai_audit_log via the existing SessionLocal pattern.
-_orchestrator = Orchestrator(audit=AuditLogger(db_sink=postgres_audit_sink))
+_orchestrator = Orchestrator(
+    agents=default_agents(prior_resolution_fetcher=_live_prior_resolution_fetcher),
+    audit=AuditLogger(db_sink=postgres_audit_sink),
+)
 
 
 class WebhookEvent(BaseModel):
