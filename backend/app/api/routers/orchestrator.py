@@ -14,6 +14,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import text
 
 from app.orchestrator import Orchestrator, OrchestrationRecord
 from app.orchestrator.agents import default_agents
@@ -61,10 +62,47 @@ def _live_prior_resolution_fetcher(ticket_id: str) -> Optional[dict]:
             db.close()
 
 
+def _live_feedback_stats(root_cause_type: str) -> tuple:
+    """Feedback-aware confidence input for the Recommendation Agent: (likes,
+    dislikes) for advisories of this root-cause type. Joins feedback to its
+    audited recommendation via ai_event_id. Fully optional -- any failure (no DB,
+    missing tables, unlinked feedback) returns (0, 0) so confidence is unchanged.
+    """
+    try:
+        from app.db.session import SessionLocal
+    except Exception:
+        return (0, 0)
+    db = None
+    try:
+        db = SessionLocal()
+        row = db.execute(
+            text(
+                "SELECT "
+                "COUNT(*) FILTER (WHERE f.verdict = 'like')    AS likes, "
+                "COUNT(*) FILTER (WHERE f.verdict = 'dislike') AS dislikes "
+                "FROM recommendation_feedback f "
+                "JOIN ai_audit_log a ON a.ai_event_id = f.ai_event_id "
+                "WHERE a.output_json -> 'prevention' ->> 'root_cause_type' = :rct"
+            ),
+            {"rct": root_cause_type},
+        ).first()
+        if row is None:
+            return (0, 0)
+        return (int(row.likes or 0), int(row.dislikes or 0))
+    except Exception:
+        return (0, 0)
+    finally:
+        if db is not None:
+            db.close()
+
+
 # One supervisor for the app: state store is shared (Redis/in-memory),
 # audit goes to Postgres ai_audit_log via the existing SessionLocal pattern.
 _orchestrator = Orchestrator(
-    agents=default_agents(prior_resolution_fetcher=_live_prior_resolution_fetcher),
+    agents=default_agents(
+        prior_resolution_fetcher=_live_prior_resolution_fetcher,
+        feedback_stats=_live_feedback_stats,
+    ),
     audit=AuditLogger(db_sink=postgres_audit_sink),
 )
 
