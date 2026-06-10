@@ -64,9 +64,8 @@ _ROUTING_SYSTEM = (
     "matching it to the MOST SIMILAR reference ticket below, and recommend that reference "
     "ticket's team. Choose the team ONLY from the reference tickets "
     f"({', '.join(_REF_TEAMS)}); do not invent teams.\n\nREFERENCE TICKETS:\n" + _REF_BLOCK +
-    '\n\nRespond ONLY as a JSON object with keys: '
-    '"recommended_team" (team of the best-matching reference ticket), '
-    '"confidence" (number 0-1).'
+    '\n\nRespond ONLY as a JSON object with key: '
+    '"recommended_team" (team of the best-matching reference ticket).'
 )
 
 
@@ -78,17 +77,12 @@ class RoutingAgent:
         result = chat_json(_ROUTING_SYSTEM, f"NEW ticket title: {title}\nDescription: {desc}")
         if not result or "recommended_team" not in result:
             return {"assigned_team": assigned, "assignment_correct": None,
-                    "recommended_team": "Unknown", "confidence": "0%"}
+                    "recommended_team": "Unknown"}
         rec = str(result.get("recommended_team", "Unknown")).strip()
-        try:
-            conf = float(result.get("confidence", 0) or 0)
-        except (TypeError, ValueError):
-            conf = 0.0
         return {
             "assigned_team": assigned,
             "assignment_correct": assigned.strip().lower() == rec.lower(),
             "recommended_team": rec,
-            "confidence": f"{int(round(conf * 100))}%",
         }
 
 
