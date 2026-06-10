@@ -16,6 +16,7 @@ from app.orchestrator.agents import (
     recommendation_to_resolution_payload,
 )
 from app.orchestrator.trusted_sources import is_trusted
+from app.orchestrator.probe import ProbeScheduler
 
 
 def _fresh() -> Orchestrator:
@@ -254,6 +255,64 @@ def test_recommendation_to_resolution_payload_serializes_tracks():
     assert tracks == ["immediate", "durable", "prevention"]
     assert payload["ticket_id"] == "t-rec"
     assert payload["resolution_text"] == out["resolution_text"]
+
+
+# --- R-08 health-check probe -----------------------------------------------
+
+class _InstantTimer:
+    """Timer stub that fires synchronously on start() -- instant probe tests."""
+    def __init__(self, interval, function):
+        self._function = function
+        self.daemon = False
+
+    def start(self):
+        self._function()
+
+
+def _instant_probe():
+    return ProbeScheduler(delay_seconds=0, timer_factory=_InstantTimer)
+
+
+def _drive_to_recommendation_accept(symptom_check):
+    orch = Orchestrator(probe=_instant_probe(), symptom_check=symptom_check)
+    orch.handle_event({"event_id": "p", "event_type": "reactivate",
+                       "ticket_id": "t-probe", "reactivation_count": 1})
+    orch.handle_decision("t-probe", "accept")        # routing -> diagnosis
+    orch.handle_decision("t-probe", "accept")        # diagnosis -> recommendation
+    rec = orch.handle_decision("t-probe", "accept")  # recommendation accept -> probe + DONE
+    return orch, rec
+
+
+def test_probe_persists_refires_and_caps():
+    orch, rec = _drive_to_recommendation_accept(symptom_check=lambda tid: False)
+    assert rec.state == TicketState.DONE.value                 # pipeline still completes
+    persist = [e for e in orch.audit.events if "symptoms persist" in (e["note"] or "")]
+    assert len(persist) == 2                                   # capped at 2 total probes
+
+
+def test_probe_resolved_stops():
+    orch, rec = _drive_to_recommendation_accept(symptom_check=lambda tid: True)
+    resolved = [e for e in orch.audit.events if "symptoms resolved" in (e["note"] or "")]
+    persist = [e for e in orch.audit.events if "symptoms persist" in (e["note"] or "")]
+    assert len(resolved) == 1 and len(persist) == 0
+
+
+def test_probe_failure_never_breaks_pipeline():
+    def boom(tid):
+        raise RuntimeError("servicenow down")
+    orch, rec = _drive_to_recommendation_accept(symptom_check=boom)
+    assert rec.state == TicketState.DONE.value                 # never breaks the pipeline
+    failed = [e for e in orch.audit.events if "symptom_check failed" in (e["note"] or "")]
+    assert len(failed) == 1
+
+
+def test_probe_not_armed_for_non_recommendation_accept():
+    orch = Orchestrator(probe=_instant_probe(), symptom_check=lambda tid: False)
+    orch.handle_event({"event_id": "pc", "event_type": "create", "ticket_id": "t-noprobe"})
+    orch.handle_decision("t-noprobe", "accept")      # routing -> diagnosis
+    orch.handle_decision("t-noprobe", "accept")      # diagnosis -> DONE (no recommendation)
+    probe_notes = [e for e in orch.audit.events if "probe:" in (e["note"] or "")]
+    assert probe_notes == []
 
 
 def _main():

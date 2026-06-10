@@ -15,6 +15,7 @@ It does NOT route-to-team, diagnose, or recommend -- those are the sub-agents.
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
@@ -22,6 +23,7 @@ from app.orchestrator.agents import default_agents
 from app.orchestrator.audit import AuditLogger
 from app.orchestrator.events import classify_event
 from app.orchestrator.mcp_client import MockMCPClient
+from app.orchestrator.probe import ProbeScheduler
 from app.orchestrator.states import AGENT_STATE, PIPELINES, TicketState
 from app.orchestrator.store import get_state_store
 
@@ -54,11 +56,19 @@ class OrchestrationRecord:
 
 
 class Orchestrator:
-    def __init__(self, store=None, mcp=None, agents=None, audit=None) -> None:
+    def __init__(self, store=None, mcp=None, agents=None, audit=None,
+                 probe=None, symptom_check=None) -> None:
         self.store = store or get_state_store()
         self.mcp = mcp or MockMCPClient()
         self.agents = agents or default_agents()
         self.audit = audit or AuditLogger()
+        # R-08 health-check probe (optional wiring). Default symptom check
+        # reports "resolved" so the probe is inert until a real ServiceNow check
+        # is injected; the 15-min timer is overridable via PROBE_DELAY_SECONDS.
+        self.probe = probe or ProbeScheduler(
+            delay_seconds=float(os.getenv("PROBE_DELAY_SECONDS", "900"))
+        )
+        self.symptom_check = symptom_check or (lambda ticket_id: True)
 
     # -- entry point: a new ICM event arrives -----------------------------
     def handle_event(self, payload: dict) -> Optional[OrchestrationRecord]:
@@ -102,6 +112,9 @@ class Orchestrator:
 
         if decision == "accept":
             self.audit.log(ticket_id, agent, note="engineer ACCEPTED advisory", was_used=True)
+            # R-08: accepting a recommendation arms a delayed health-check probe.
+            if agent == "recommendation":
+                self._schedule_probe(ticket_id)
             return self._advance(record)                         # next agent or DONE
 
         if decision == "reject":
@@ -165,3 +178,39 @@ class Orchestrator:
 
     def _save(self, record: OrchestrationRecord) -> None:
         self.store.save_state(record.ticket_id, record.to_dict())
+
+    # -- R-08 health-check probe (fully optional; never breaks the pipeline) --
+    def _schedule_probe(self, ticket_id: str) -> None:
+        try:
+            self.probe.schedule(ticket_id, lambda: self._run_probe(ticket_id))
+        except Exception as exc:  # pragma: no cover - belt and braces
+            self.audit.log(ticket_id, "recommendation", note=f"probe: scheduling failed ({exc})")
+
+    def _run_probe(self, ticket_id: str) -> None:
+        """Fired ~15 min after ACCEPT: if symptoms persist, re-surface the stored
+        recommendation advisory and arm at most one follow-up (capped at 2)."""
+        try:
+            resolved = self.symptom_check(ticket_id)
+        except Exception as exc:
+            self.audit.log(ticket_id, "recommendation", note=f"probe: symptom_check failed ({exc})")
+            return
+
+        if resolved:
+            self.audit.log(ticket_id, "recommendation", note="probe: symptoms resolved")
+            return
+
+        try:
+            raw = self.store.load_state(ticket_id)
+            if raw:
+                record = OrchestrationRecord.from_dict(raw)
+                last = next((a for a in reversed(record.advisories)
+                             if a.get("agent") == "recommendation"), None)
+                if last is not None:
+                    self.mcp.post_icm_comment(ticket_id, "recommendation", last["output"])
+        except Exception as exc:
+            self.audit.log(ticket_id, "recommendation", note=f"probe: re-fire failed ({exc})")
+            return
+
+        self.audit.log(ticket_id, "recommendation",
+                       note="probe: symptoms persist, advisory re-fired", was_used=False)
+        self._schedule_probe(ticket_id)  # one follow-up; ProbeScheduler caps total
