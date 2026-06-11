@@ -379,7 +379,7 @@ def test_case_text_builds_title_and_description():
     assert "Title: Hello" in t and "World" in t
 
 
-def test_d365_runner_format_and_process():
+def test_d365_runner_runs_full_pipeline_and_formats_note():
     from app.orchestrator.d365_runner import process_case
     case = {"id": "new", "title": "Coffee machine not heating", "description": "coffee"}
     corpus = [
@@ -388,10 +388,15 @@ def test_d365_runner_format_and_process():
     ]
     with _patch_llm(_full_llm_result()):
         advisory, note = process_case(case, corpus, embed_fn=_fake_embed)
-    assert "AI SUPPORT RECOMMENDATION" in note
+    # all three agents ran
+    assert advisory.get("routing") and advisory.get("diagnosis") and advisory.get("recommendation")
+    # note has every section
+    assert "ORCHESTRATED ANALYSIS" in note
+    assert "TEAM ASSIGNMENT" in note and "DIAGNOSIS" in note and "RECOMMENDATION" in note
     assert "IMMEDIATE" in note and "DURABLE" in note
-    assert advisory.get("similar_cases")          # grounded in real matches
-    assert "CAS-1" in note                         # top match cited in the note
+    assert "Reference links:" in note              # trusted links now shown
+    assert "CAS-1" in note                         # real similar case cited
+    assert advisory["recommendation"].get("similar_cases")
 
 
 def _main():
