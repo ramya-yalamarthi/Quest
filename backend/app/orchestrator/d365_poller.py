@@ -58,17 +58,37 @@ def poll_once(
     return processed, new_since
 
 
+def _seed_since(client, scan: int = 50) -> str:
+    """Restart-safe watermark: resume just after the newest Case that already
+    has an AI note (so we never back-process the old corpus, and we DO pick up
+    anything created while the poller was down). Falls back to the newest Case."""
+    cases = client.list_cases(top=scan)
+    if not cases:
+        return ""
+    for c in cases:                                    # newest first
+        if client.case_has_note(c.get("id"), NOTE_SUBJECT):
+            return c.get("created_on") or ""
+    return cases[0].get("created_on") or ""
+
+
 def poll_loop(client, interval: int = 120, log: Callable = print) -> None:
-    """Run forever: every `interval` seconds, process any new Cases."""
-    base = client.list_cases(top=1)
-    since = (base[0].get("created_on") if base else "") or ""
-    log(f"[poller] started; watching for new Cases every {interval}s "
-        f"(baseline {since or 'none'})")
+    """Run forever, resiliently: every `interval` seconds, process new Cases.
+
+    Nothing in here is allowed to kill the thread -- a bad credential or a
+    transient error is logged each cycle and retried, so the Render logs always
+    show what's happening (heartbeat + errors)."""
+    log(f"[poller] starting (interval {interval}s)...")
+    since = None
     while True:
-        time.sleep(interval)
         try:
+            if since is None:                          # seed once D365 is reachable
+                since = _seed_since(client)
+                log(f"[poller] watching for Cases newer than {since or '(none)'}")
             processed, since = poll_once(client, since)
-            for t in processed:
-                log(f"[poller] auto-processed {t} -> note posted")
+            log(f"[poller] cycle ok; {len(processed)} processed"
+                + (": " + ", ".join(processed) if processed else ""))
         except Exception as exc:
-            log(f"[poller] poll error: {exc}")
+            log(f"[poller] cycle error ({type(exc).__name__}): {exc}  "
+                f"-- check AZURE_*/EMBEDDING_* env values; retrying.")
+            since = None                               # re-seed next cycle
+        time.sleep(interval)

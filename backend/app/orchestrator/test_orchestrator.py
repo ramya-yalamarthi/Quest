@@ -412,6 +412,18 @@ def test_poller_processes_only_new_cases():
     assert since == "2026-06-11T10:00:00Z"         # carry-forward watermark
 
 
+def test_poller_seeds_from_newest_noted_case():
+    from app.orchestrator.d365_poller import _seed_since
+    cases = [
+        {"id": "3", "ticket_number": "CAS-3", "created_on": "2026-06-11T12:00:00Z"},  # newest, no note
+        {"id": "2", "ticket_number": "CAS-2", "created_on": "2026-06-11T11:00:00Z"},  # has note
+        {"id": "1", "ticket_number": "CAS-1", "created_on": "2026-06-11T10:00:00Z"},
+    ]
+    client = _FakeClient(cases, noted={"2"})
+    # resume just after the newest NOTED case -> CAS-3 (newer, un-noted) will be processed
+    assert _seed_since(client) == "2026-06-11T11:00:00Z"
+
+
 def test_poller_is_idempotent_skips_noted():
     from app.orchestrator.d365_poller import poll_once
     cases = [{"id": "2", "ticket_number": "CAS-2", "title": "new", "description": "x",
