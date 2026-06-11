@@ -1,5 +1,5 @@
 """
-Tests for the supervisor -- pure logic, no DB/Redis (uses in-memory store + fakes).
+Tests for the supervisor + agents -- pure logic, no DB/Redis (in-memory + fakes).
 
 Run either way:
     cd backend
@@ -12,7 +12,7 @@ from app.orchestrator.orchestrator import Orchestrator
 from app.orchestrator.events import EventType, classify_event
 from app.orchestrator.states import TicketState
 from app.orchestrator.agents import (
-    RecommendationAgent,
+    RoutingAgent, DiagnosisAgent, RecommendationAgent,
     recommendation_to_resolution_payload,
 )
 from app.orchestrator.trusted_sources import is_trusted
@@ -24,60 +24,52 @@ def _fresh() -> Orchestrator:
     return Orchestrator()
 
 
-# --- Recommendation Agent (UC3) test helpers --------------------------------
+# --- agent test helpers -----------------------------------------------------
 
-def _ctx(prior=None, title="Production SQL Server unresponsive",
-         desc="Applications return 'connection timeout expired'."):
-    ctx = {"ticket": {}, "event": {"type": "reactivate",
-            "payload": {"ticket_id": "t-rec", "title": title, "description": desc}}}
-    if prior is not None:
-        ctx["prior_resolution"] = prior
+def _ctx(title="nCourt payments failing at checkout",
+         desc="Users cannot complete nCourt payments; error at checkout.",
+         assigned_team="", similar=None):
+    ctx = {"ticket": {}, "event": {"type": "reactivate", "payload": {
+        "ticket_id": "t-rec", "title": title, "description": desc,
+        "assigned_team": assigned_team}}}
+    if similar is not None:
+        ctx["similar"] = similar
     return ctx
 
 
-def _full_llm_result(rct="db_connection_exhaustion", cm=False):
+def _llm_stub(cm=False, links=None, team="Payments"):
+    """One stub covering keys for all three agents (chat_json is patched globally)."""
     return {
-        "reference": "INC0010724",
-        "root_cause": "Connection pool exhausted under load.",
-        "root_cause_type": rct,
-        "delta": {
-            "what_changed": "Peak load higher than during the last incident.",
-            "prior_fix_summary": "Restarted the SQL service to clear sessions.",
-            "prior_fix_gap": "Restart cleared sessions but the pool limit was never raised.",
-            "original_fix_held": False,
-            "recurrence_pattern": "weekly under peak load",
-            "delta_severity": "high",
-        },
-        "immediate_action": {"summary": "Recycle the app connection pool",
-                             "steps": ["Restart the app pool"], "eta_minutes": 25},
-        "durable_fix": {"summary": "Raise pool size and add leak detection",
-                        "steps": ["Tune max pool size"], "eta_hours": 5,
-                        "requires_change_mgmt": cm, "cm_justification": ""},
-        "reasoning": "Symptoms match database connection exhaustion.",
+        "recommended_team": team,
+        "root_cause": "nCourt payment gateway integration is failing.",
+        "hot_fix": {"summary": "Restart the payment gateway connector.",
+                    "steps": ["Restart the connector", "Run a test payment"]},
+        "ultimate_fix": {"summary": "Add retry + monitoring to the gateway integration.",
+                         "steps": ["Add retry logic", "Add an alert"],
+                         "requires_change_mgmt": cm,
+                         "cm_justification": "Integration change" if cm else ""},
+        "reference_links": links if links is not None else
+            [{"title": "Payment connectors", "url": "https://learn.microsoft.com/x", "source": "Microsoft Learn"}],
         "confidence": 0.7,
     }
 
 
 class _patch_llm:
-    """Temporarily replace agents_mod.chat_json (and optionally get_prevention)."""
-    def __init__(self, result, prevention=None):
+    """Temporarily replace agents_mod.chat_json with a canned result (or None)."""
+    def __init__(self, result):
         self._result = result
-        self._prevention = prevention
 
     def __enter__(self):
-        self._orig_chat = agents_mod.chat_json
+        self._orig = agents_mod.chat_json
         agents_mod.chat_json = lambda system, user, **kw: self._result
-        if self._prevention is not None:
-            self._orig_prev = agents_mod.get_prevention
-            agents_mod.get_prevention = lambda rct: self._prevention
         return self
 
     def __exit__(self, *exc):
-        agents_mod.chat_json = self._orig_chat
-        if self._prevention is not None:
-            agents_mod.get_prevention = self._orig_prev
+        agents_mod.chat_json = self._orig
         return False
 
+
+# --- orchestrator / supervisor ----------------------------------------------
 
 def test_classify_explicit_and_inferred():
     assert classify_event({"event_type": "transfer"}) == EventType.TRANSFER
@@ -90,9 +82,9 @@ def test_create_runs_routing_then_diagnosis():
     orch = _fresh()
     rec = orch.handle_event({"event_id": "a", "event_type": "create", "ticket_id": "t-create"})
     assert rec.pipeline == ["routing", "diagnosis"]
-    rec = orch.handle_decision("t-create", "accept")   # routing -> diagnosis
+    rec = orch.handle_decision("t-create", "accept")
     assert rec.current_agent == "diagnosis"
-    rec = orch.handle_decision("t-create", "accept")   # diagnosis -> DONE
+    rec = orch.handle_decision("t-create", "accept")
     assert rec.state == TicketState.DONE.value
 
 
@@ -116,7 +108,6 @@ def test_duplicate_event_is_ignored():
     orch.handle_event({"event_id": "dup", "event_type": "create", "ticket_id": "t-dup"})
     before = len(orch.audit.events)
     orch.handle_event({"event_id": "dup", "event_type": "create", "ticket_id": "t-dup"})
-    # The duplicate adds exactly one "ignored" audit note and runs no agent.
     notes = [e for e in orch.audit.events[before:] if "duplicate" in (e["note"] or "")]
     assert len(notes) == 1
 
@@ -131,8 +122,6 @@ def test_reject_blocks_and_flags_retraining():
 
 
 def test_second_event_same_ticket_gets_fresh_event_context():
-    # Regression: a later event on the same ticket must not reuse the
-    # first event's cached context (event_type/payload must be current).
     orch = _fresh()
     orch.handle_event({"event_id": "c1", "event_type": "create", "ticket_id": "t-multi"})
     rec = orch.handle_event({"event_id": "c2", "event_type": "reactivate",
@@ -150,90 +139,86 @@ def test_missing_ticket_id_raises():
         pass
 
 
-def test_recommendation_output_has_full_shape():
-    with _patch_llm(_full_llm_result()):
-        out = RecommendationAgent().run(_ctx(prior={"resolution_text": "Restarted SQL.",
-                                                    "root_cause": "pool exhausted"}))
-    # delta incl. the core prior_fix_gap field
-    assert out["delta"]["prior_fix_gap"]
-    # both tracks
-    assert out["immediate_action"]["eta_minutes"] == 25
-    assert out["durable_fix"]["eta_hours"] == 5
-    assert "requires_change_mgmt" in out["durable_fix"]            # CM flag present
-    # prevention + links + resolution fields + confidence
-    assert out["prevention"]["root_cause_type"] == "db_connection_exhaustion"
-    assert out["prevention"]["actions"] and out["prevention"]["monitoring_rule"]
+# --- Routing agent ----------------------------------------------------------
+
+def test_routing_recommends_team_when_unassigned():
+    with _patch_llm(_llm_stub(team="Payments")):
+        out = RoutingAgent().run(_ctx())
+    assert out["recommended_team"] == "Payments"
+    assert out["assignment_correct"] is None          # no team on the case yet
+    assert out["assigned_team"] == "Unassigned"
+
+
+def test_routing_flags_wrong_team():
+    with _patch_llm(_llm_stub(team="Payments")):
+        out = RoutingAgent().run(_ctx(assigned_team="Infrastructure"))
+    assert out["assignment_correct"] is False
+    assert out["recommended_team"] == "Payments"
+
+
+def test_routing_confirms_correct_team():
+    with _patch_llm(_llm_stub(team="Payments")):
+        out = RoutingAgent().run(_ctx(assigned_team="Payments"))
+    assert out["assignment_correct"] is True
+
+
+# --- Diagnosis agent --------------------------------------------------------
+
+def test_diagnosis_returns_root_cause_only():
+    with _patch_llm(_llm_stub()):
+        out = DiagnosisAgent().run(_ctx())
+    assert out["root_cause"]
+    assert "reference" not in out and "reasoning" not in out   # dropped
+
+
+def test_diagnosis_fallback_when_no_llm():
+    with _patch_llm(None):
+        out = DiagnosisAgent().run(_ctx())
+    assert out["root_cause"]
+
+
+# --- Recommendation agent ---------------------------------------------------
+
+def test_recommendation_new_shape():
+    with _patch_llm(_llm_stub()):
+        out = RecommendationAgent().run(_ctx())
+    assert out["hot_fix"]["summary"] and out["ultimate_fix"]["summary"]
+    assert "requires_change_mgmt" in out["ultimate_fix"]
     assert isinstance(out["trusted_links"], list) and out["trusted_links"]
-    assert out["resolution_text"] and out["root_cause"] and out["reasoning"]
-    assert isinstance(out["outcome"], list)
     assert 0.0 <= out["confidence"] <= 1.0
-    assert out["reference"] == "INC0010724" and out["reference_link"]
+    for gone in ("prevention", "delta", "reference", "immediate_action", "durable_fix"):
+        assert gone not in out                        # old fields removed
 
 
-def test_recommendation_prior_present_vs_absent():
-    # absent -> graceful "no prior resolution" delta (fallback path, LLM off)
-    with _patch_llm(None):
-        absent = RecommendationAgent().run(_ctx(prior=None))
-    assert "no prior resolution" in absent["delta"]["prior_fix_gap"].lower()
-    # present -> prior summary reflected in the delta
-    with _patch_llm(None):
-        present = RecommendationAgent().run(
-            _ctx(prior={"resolution_text": "Bounced the service", "root_cause": "stale sessions"}))
-    assert "bounced the service" in present["delta"]["prior_fix_summary"].lower()
-
-
-def test_recommendation_llm_unavailable_fallback_no_crash():
-    with _patch_llm(None):
+def test_recommendation_cm_flag_from_llm():
+    with _patch_llm(_llm_stub(cm=True)):
         out = RecommendationAgent().run(_ctx())
-    # full advisory shape even with no LLM
-    for key in ("delta", "immediate_action", "durable_fix", "prevention",
-                "trusted_links", "resolution_text", "confidence"):
-        assert key in out
-
-
-def test_recommendation_unknown_root_cause_type_falls_back_to_config_drift():
-    with _patch_llm(_full_llm_result(rct="totally_made_up_key")):
-        out = RecommendationAgent().run(_ctx())
-    assert out["prevention"]["root_cause_type"] == "config_drift"
-    # config_drift is a CM-required type -> backstop forces the flag True
-    assert out["durable_fix"]["requires_change_mgmt"] is True
-
-
-def test_recommendation_cm_backstop():
-    # high-impact type with the LLM saying False -> forced True
-    with _patch_llm(_full_llm_result(rct="db_storage_full", cm=False)):
-        out = RecommendationAgent().run(_ctx())
-    assert out["durable_fix"]["requires_change_mgmt"] is True
-    # non-CM type stays False
-    with _patch_llm(_full_llm_result(rct="hardware_thermal", cm=False)):
+    assert out["ultimate_fix"]["requires_change_mgmt"] is True
+    with _patch_llm(_llm_stub(cm=False)):
         out2 = RecommendationAgent().run(_ctx())
-    assert out2["durable_fix"]["requires_change_mgmt"] is False
+    assert out2["ultimate_fix"]["requires_change_mgmt"] is False
 
 
 def test_recommendation_untrusted_links_dropped():
-    tampered = {
-        "prevention_actions": ["do x"], "monitoring_rule": "watch y",
-        "trusted_links": [
-            {"title": "good", "url": "https://learn.microsoft.com/a", "source": "Microsoft Learn"},
-            {"title": "bad", "url": "http://evil.example.com/x", "source": "spoof"},
-        ],
-    }
-    with _patch_llm(_full_llm_result(), prevention=tampered):
+    links = [
+        {"title": "good", "url": "https://learn.microsoft.com/a", "source": "Microsoft Learn"},
+        {"title": "reddit", "url": "https://www.reddit.com/r/x", "source": "Reddit"},
+        {"title": "bad", "url": "http://evil.example.com/x", "source": "spoof"},
+    ]
+    with _patch_llm(_llm_stub(links=links)):
         out = RecommendationAgent().run(_ctx())
     urls = [l["url"] for l in out["trusted_links"]]
     assert "https://learn.microsoft.com/a" in urls
-    assert all(is_trusted(u) for u in urls)            # untrusted one dropped
+    assert "https://www.reddit.com/r/x" in urls        # reddit now trusted
+    assert all(is_trusted(u) for u in urls)
     assert "http://evil.example.com/x" not in urls
 
 
-def test_recommendation_feedback_aware_confidence():
-    base = 0.6
-    likes = RecommendationAgent(feedback_stats=lambda rct: (3, 0))
-    dislikes = RecommendationAgent(feedback_stats=lambda rct: (0, 3))
-    few = RecommendationAgent(feedback_stats=lambda rct: (1, 1))
-    assert abs(likes._adjust_confidence(base, "config_drift") - 0.72) < 1e-9      # 3/0 raises
-    assert abs(dislikes._adjust_confidence(base, "config_drift") - 0.48) < 1e-9   # 0/3 lowers
-    assert abs(few._adjust_confidence(base, "config_drift") - base) < 1e-9        # <3 unchanged
+def test_recommendation_fallback_when_no_llm():
+    with _patch_llm(None):
+        out = RecommendationAgent().run(_ctx())
+    for key in ("hot_fix", "ultimate_fix", "trusted_links", "confidence"):
+        assert key in out
 
 
 def test_recommendation_invalid_feedback_verdict_rejected():
@@ -248,32 +233,16 @@ def test_recommendation_invalid_feedback_verdict_rejected():
         pass
 
 
-def test_recommendation_surfaces_similar_cases():
-    ctx = _ctx()
-    ctx["similar"] = [
-        {"ticket_number": "CAS-01005", "title": "FW: OCourt efiling down",
-         "description": "efiling unavailable", "score": 0.744},
-        {"ticket_number": "CAS-01019", "title": "OCourt Issue",
-         "description": "ocourt error", "score": 0.539},
-    ]
-    with _patch_llm(_full_llm_result()):
-        out = RecommendationAgent().run(ctx)
-    assert out.get("similar_cases")
-    assert out["similar_cases"][0]["ticket_number"] == "CAS-01005"
-    assert out["similar_cases"][0]["score"] == 0.744
-
-
 def test_recommendation_to_resolution_payload_serializes_tracks():
-    with _patch_llm(_full_llm_result()):
+    with _patch_llm(_llm_stub()):
         out = RecommendationAgent().run(_ctx())
     payload = recommendation_to_resolution_payload(out, ticket_id="t-rec")
     tracks = [s["track"] for s in payload["recommendedsteps"]]
-    assert tracks == ["immediate", "durable", "prevention"]
+    assert tracks == ["hot_fix", "ultimate_fix"]
     assert payload["ticket_id"] == "t-rec"
-    assert payload["resolution_text"] == out["resolution_text"]
 
 
-# --- R-08 health-check probe -----------------------------------------------
+# --- R-08 health-check probe ------------------------------------------------
 
 class _InstantTimer:
     """Timer stub that fires synchronously on start() -- instant probe tests."""
@@ -293,17 +262,17 @@ def _drive_to_recommendation_accept(symptom_check):
     orch = Orchestrator(probe=_instant_probe(), symptom_check=symptom_check)
     orch.handle_event({"event_id": "p", "event_type": "reactivate",
                        "ticket_id": "t-probe", "reactivation_count": 1})
-    orch.handle_decision("t-probe", "accept")        # routing -> diagnosis
-    orch.handle_decision("t-probe", "accept")        # diagnosis -> recommendation
-    rec = orch.handle_decision("t-probe", "accept")  # recommendation accept -> probe + DONE
+    orch.handle_decision("t-probe", "accept")
+    orch.handle_decision("t-probe", "accept")
+    rec = orch.handle_decision("t-probe", "accept")
     return orch, rec
 
 
 def test_probe_persists_refires_and_caps():
     orch, rec = _drive_to_recommendation_accept(symptom_check=lambda tid: False)
-    assert rec.state == TicketState.DONE.value                 # pipeline still completes
+    assert rec.state == TicketState.DONE.value
     persist = [e for e in orch.audit.events if "symptoms persist" in (e["note"] or "")]
-    assert len(persist) == 2                                   # capped at 2 total probes
+    assert len(persist) == 2
 
 
 def test_probe_resolved_stops():
@@ -315,9 +284,9 @@ def test_probe_resolved_stops():
 
 def test_probe_failure_never_breaks_pipeline():
     def boom(tid):
-        raise RuntimeError("servicenow down")
+        raise RuntimeError("d365 down")
     orch, rec = _drive_to_recommendation_accept(symptom_check=boom)
-    assert rec.state == TicketState.DONE.value                 # never breaks the pipeline
+    assert rec.state == TicketState.DONE.value
     failed = [e for e in orch.audit.events if "symptom_check failed" in (e["note"] or "")]
     assert len(failed) == 1
 
@@ -325,8 +294,8 @@ def test_probe_failure_never_breaks_pipeline():
 def test_probe_not_armed_for_non_recommendation_accept():
     orch = Orchestrator(probe=_instant_probe(), symptom_check=lambda tid: False)
     orch.handle_event({"event_id": "pc", "event_type": "create", "ticket_id": "t-noprobe"})
-    orch.handle_decision("t-noprobe", "accept")      # routing -> diagnosis
-    orch.handle_decision("t-noprobe", "accept")      # diagnosis -> DONE (no recommendation)
+    orch.handle_decision("t-noprobe", "accept")
+    orch.handle_decision("t-noprobe", "accept")
     probe_notes = [e for e in orch.audit.events if "probe:" in (e["note"] or "")]
     assert probe_notes == []
 
@@ -350,14 +319,14 @@ def _fake_embed(texts):
 def test_similarity_ranks_and_excludes_self():
     query = {"id": "q", "title": "Coffee machine not heating", "description": "coffee"}
     corpus = [
-        {"id": "q", "title": "self", "description": "coffee"},        # same id -> excluded
+        {"id": "q", "title": "self", "description": "coffee"},
         {"id": "a", "title": "Network down", "description": "network"},
         {"id": "b", "title": "Coffeemaker won't heat", "description": "coffee"},
     ]
     res = rank_similar(query, corpus, top_k=5, embed_fn=_fake_embed)
     ids = [r["id"] for r in res]
-    assert "q" not in ids                 # excludes the query itself
-    assert ids[0] == "b"                  # most similar first
+    assert "q" not in ids
+    assert ids[0] == "b"
     assert res[0]["score"] > 0.99
 
 
@@ -370,7 +339,7 @@ def test_similarity_empty_when_no_embeddings():
 
 def test_similarity_min_score_filters():
     query = {"id": "q", "title": "coffee", "description": "coffee"}
-    corpus = [{"id": "a", "title": "network", "description": "network"}]  # orthogonal -> 0.0
+    corpus = [{"id": "a", "title": "network", "description": "network"}]
     assert rank_similar(query, corpus, min_score=0.5, embed_fn=_fake_embed) == []
 
 
@@ -379,24 +348,28 @@ def test_case_text_builds_title_and_description():
     assert "Title: Hello" in t and "World" in t
 
 
-def test_d365_runner_runs_full_pipeline_and_formats_note():
+# --- D365 runner: full pipeline -> one bound note ---------------------------
+
+def test_d365_runner_full_pipeline_and_note():
     from app.orchestrator.d365_runner import process_case
-    case = {"id": "new", "title": "Coffee machine not heating", "description": "coffee"}
+    case = {"id": "new", "ticket_number": "CAS-NEW",
+            "title": "Coffee machine not heating", "description": "coffee"}
     corpus = [
         {"id": "b", "ticket_number": "CAS-1", "title": "Coffeemaker won't heat", "description": "coffee"},
         {"id": "a", "ticket_number": "CAS-2", "title": "Network down", "description": "network"},
     ]
-    with _patch_llm(_full_llm_result()):
-        advisory, note = process_case(case, corpus, embed_fn=_fake_embed)
-    # all three agents ran
+    with _patch_llm(_llm_stub()):
+        advisory, note = process_case(case, corpus,
+                                      org_base="https://org.crm.dynamics.com", embed_fn=_fake_embed)
     assert advisory.get("routing") and advisory.get("diagnosis") and advisory.get("recommendation")
-    # note has every section
-    assert "ORCHESTRATED ANALYSIS" in note
+    assert "AI SUPPORT ANALYSIS" in note
     assert "TEAM ASSIGNMENT" in note and "DIAGNOSIS" in note and "RECOMMENDATION" in note
-    assert "IMMEDIATE" in note and "DURABLE" in note
-    assert "Reference links:" in note              # trusted links now shown
-    assert "CAS-1" in note                         # real similar case cited
-    assert advisory["recommendation"].get("similar_cases")
+    assert "Hot fix:" in note and "Ultimate fix:" in note
+    assert "Reference links:" in note
+    assert "CAS-1" in note and "% match" in note          # similar case + percentage
+    assert "main.aspx" in note                            # clickable D365 link
+    assert advisory["diagnosis"]["similar_incidents"]     # similarity is part of diagnosis
+    assert "Confidence:" in note
 
 
 def _main():

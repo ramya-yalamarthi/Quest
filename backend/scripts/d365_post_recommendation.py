@@ -28,7 +28,7 @@ def main(argv):
         target = corpus[0]  # newest (list_cases is ordered createdon desc)
 
     print(f"Processing {target['ticket_number']} | {target['title']}")
-    advisory, note = process_case(target, corpus)
+    advisory, note = process_case(target, corpus, org_base=client.cfg["base"])
     ann = client.create_case_note(target["id"], NOTE_SUBJECT, note)
     print("\n" + note)
     print(f"\nPosted to {target['ticket_number']} (annotation {ann}).")

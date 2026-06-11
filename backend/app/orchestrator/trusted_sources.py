@@ -15,13 +15,16 @@ from urllib.parse import urlparse
 # hostname -> display source label
 TRUSTED_DOMAINS = {
     "learn.microsoft.com": "Microsoft Learn",
+    "docs.microsoft.com": "Microsoft Docs",
     "techcommunity.microsoft.com": "Microsoft Tech Community",
     "support.microsoft.com": "Microsoft Support",
+    "devblogs.microsoft.com": "Microsoft DevBlogs",
     "docs.servicenow.com": "ServiceNow Docs",
     "support.servicenow.com": "ServiceNow Support KB",
     "stackoverflow.com": "Stack Overflow",
     "serverfault.com": "Server Fault",
-    "github.com": "GitHub Issues",
+    "github.com": "GitHub",
+    "reddit.com": "Reddit",
     "cisco.com": "Cisco Support",
     "postgresql.org": "PostgreSQL Docs",
 }
