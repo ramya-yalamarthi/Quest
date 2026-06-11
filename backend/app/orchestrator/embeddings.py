@@ -6,11 +6,14 @@ library that the orchestrator already ships -- NO torch, NO sentence-transformer
 NO database. Optional, mirroring llm.py: if not configured, returns None and
 callers fall back (no similarity, agents use the 4 reference tickets).
 
-Required env vars:
-    OPENAI_ENDPOINT     same Azure OpenAI resource as the chat model
-    OPENAI_API_KEY
-    EMBEDDING_MODEL     the embedding *deployment* name (e.g. text-embedding-ada-002)
-    LLM_API_VERSION     optional, defaults to 2024-12-01-preview
+Env vars (embedding-specific, falling back to the chat model's if unset):
+    EMBEDDING_MODEL        the embedding *deployment* name (e.g. text-embedding)  [required]
+    EMBEDDING_ENDPOINT     defaults to OPENAI_ENDPOINT
+    EMBEDDING_API_KEY      defaults to OPENAI_API_KEY
+    EMBEDDING_API_VERSION  defaults to 2023-05-15
+
+The embedding deployment can live on the same Azure resource as the chat model
+or a different endpoint/key -- both are supported.
 """
 
 from __future__ import annotations
@@ -22,8 +25,8 @@ from typing import Optional
 
 @lru_cache(maxsize=1)
 def _client():
-    endpoint = os.getenv("OPENAI_ENDPOINT")
-    api_key = os.getenv("OPENAI_API_KEY")
+    endpoint = os.getenv("EMBEDDING_ENDPOINT") or os.getenv("OPENAI_ENDPOINT")
+    api_key = os.getenv("EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY")
     deployment = os.getenv("EMBEDDING_MODEL")
     if not (endpoint and api_key and deployment):
         return None
@@ -32,7 +35,7 @@ def _client():
         return AzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
-            api_version=os.getenv("LLM_API_VERSION", "2024-12-01-preview"),
+            api_version=os.getenv("EMBEDDING_API_VERSION", "2023-05-15"),
         )
     except Exception as exc:  # pragma: no cover
         print(f"[orchestrator.embeddings] could not init client: {exc}")
