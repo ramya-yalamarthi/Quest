@@ -17,6 +17,7 @@ from app.orchestrator.agents import (
 )
 from app.orchestrator.trusted_sources import is_trusted
 from app.orchestrator.probe import ProbeScheduler
+from app.orchestrator.similarity import rank_similar, case_text
 
 
 def _fresh() -> Orchestrator:
@@ -313,6 +314,54 @@ def test_probe_not_armed_for_non_recommendation_accept():
     orch.handle_decision("t-noprobe", "accept")      # diagnosis -> DONE (no recommendation)
     probe_notes = [e for e in orch.audit.events if "probe:" in (e["note"] or "")]
     assert probe_notes == []
+
+
+# --- In-memory similarity (Approach #2) -------------------------------------
+
+def _fake_embed(texts):
+    """Deterministic stand-in for ada-002: 'coffee'->x, 'network'->y, else z."""
+    out = []
+    for t in texts:
+        tl = t.lower()
+        if "coffee" in tl:
+            out.append([1.0, 0.0, 0.0])
+        elif "network" in tl:
+            out.append([0.0, 1.0, 0.0])
+        else:
+            out.append([0.0, 0.0, 1.0])
+    return out
+
+
+def test_similarity_ranks_and_excludes_self():
+    query = {"id": "q", "title": "Coffee machine not heating", "description": "coffee"}
+    corpus = [
+        {"id": "q", "title": "self", "description": "coffee"},        # same id -> excluded
+        {"id": "a", "title": "Network down", "description": "network"},
+        {"id": "b", "title": "Coffeemaker won't heat", "description": "coffee"},
+    ]
+    res = rank_similar(query, corpus, top_k=5, embed_fn=_fake_embed)
+    ids = [r["id"] for r in res]
+    assert "q" not in ids                 # excludes the query itself
+    assert ids[0] == "b"                  # most similar first
+    assert res[0]["score"] > 0.99
+
+
+def test_similarity_empty_when_no_embeddings():
+    res = rank_similar({"id": "q", "title": "x", "description": "y"},
+                       [{"id": "a", "title": "a", "description": "b"}],
+                       embed_fn=lambda texts: None)
+    assert res == []
+
+
+def test_similarity_min_score_filters():
+    query = {"id": "q", "title": "coffee", "description": "coffee"}
+    corpus = [{"id": "a", "title": "network", "description": "network"}]  # orthogonal -> 0.0
+    assert rank_similar(query, corpus, min_score=0.5, embed_fn=_fake_embed) == []
+
+
+def test_case_text_builds_title_and_description():
+    t = case_text({"title": "Hello", "description": "World"})
+    assert "Title: Hello" in t and "World" in t
 
 
 def _main():
