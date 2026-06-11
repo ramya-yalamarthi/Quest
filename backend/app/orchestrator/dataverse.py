@@ -120,6 +120,18 @@ class DataverseClient:
             "created_on": c.get("createdon"),
         }
 
+    def case_has_note(self, case_id: str, subject: str) -> bool:
+        """True if the Case already has an annotation with this subject (so the
+        poller is idempotent and never double-posts)."""
+        subj = subject.replace("'", "''")
+        path = ("annotations?$select=annotationid&$top=1&$filter="
+                f"_objectid_value eq {case_id} and subject eq '{subj}'")
+        try:
+            data = self._request("GET", path) or {}
+            return bool(data.get("value"))
+        except Exception:
+            return False
+
     # -- write-back -------------------------------------------------------
     def create_case_note(self, case_id: str, subject: str, text: str) -> Optional[str]:
         """Write a Note (annotation) onto a Case. Returns the new annotation id."""

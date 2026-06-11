@@ -372,6 +372,55 @@ def test_d365_runner_full_pipeline_and_note():
     assert "Confidence:" in note
 
 
+# --- D365 poller (automation) -----------------------------------------------
+
+class _FakeClient:
+    cfg = {"base": "https://org.crm.dynamics.com"}
+
+    def __init__(self, cases, noted=None):
+        self._cases = cases
+        self._noted = noted or set()
+        self.posted = []
+
+    def list_cases(self, top=100):
+        return list(self._cases)[:top]
+
+    def case_has_note(self, case_id, subject):
+        return case_id in self._noted
+
+    def create_case_note(self, case_id, subject, text):
+        self.posted.append(case_id)
+        return "ann-" + case_id
+
+
+def _fake_proc(case, corpus):
+    return {}, "NOTE for " + case["ticket_number"]
+
+
+def test_poller_processes_only_new_cases():
+    from app.orchestrator.d365_poller import poll_once
+    cases = [
+        {"id": "2", "ticket_number": "CAS-2", "title": "new", "description": "x",
+         "created_on": "2026-06-11T10:00:00Z"},
+        {"id": "1", "ticket_number": "CAS-1", "title": "old", "description": "x",
+         "created_on": "2026-06-11T09:00:00Z"},
+    ]
+    client = _FakeClient(cases)
+    processed, since = poll_once(client, since="2026-06-11T09:30:00Z", process_fn=_fake_proc)
+    assert processed == ["CAS-2"]                 # only the newer case
+    assert client.posted == ["2"]
+    assert since == "2026-06-11T10:00:00Z"         # carry-forward watermark
+
+
+def test_poller_is_idempotent_skips_noted():
+    from app.orchestrator.d365_poller import poll_once
+    cases = [{"id": "2", "ticket_number": "CAS-2", "title": "new", "description": "x",
+              "created_on": "2026-06-11T10:00:00Z"}]
+    client = _FakeClient(cases, noted={"2"})        # already has an AI note
+    processed, _ = poll_once(client, since="2026-06-11T09:30:00Z", process_fn=_fake_proc)
+    assert processed == [] and client.posted == []
+
+
 def _main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:
