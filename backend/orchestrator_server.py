@@ -49,6 +49,30 @@ app.add_middleware(
 app.include_router(orchestrator_router)
 
 
+def _maybe_start_poller() -> None:
+    """Auto-start the D365 poller in a background thread when its env vars are
+    set. If they're not (or anything fails), the web API still runs normally --
+    the poller is purely additive and never blocks startup."""
+    try:
+        from app.orchestrator.dataverse import DataverseClient, available
+        if not available():
+            print("[poller] Dataverse env not set; auto-poller disabled.")
+            return
+        import threading
+        from app.orchestrator.d365_poller import poll_loop
+        interval = int(os.getenv("POLL_INTERVAL_SECONDS", "120"))
+        threading.Thread(
+            target=poll_loop, args=(DataverseClient(),),
+            kwargs={"interval": interval}, daemon=True,
+        ).start()
+        print(f"[poller] auto-poller started (every {interval}s).")
+    except Exception as exc:  # never let the poller break the web service
+        print(f"[poller] could not start: {exc}")
+
+
+_maybe_start_poller()
+
+
 @app.get("/")
 def root():
     return {"service": "orchestration-agent", "docs": "/docs", "base": "/orchestrator"}
