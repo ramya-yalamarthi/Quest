@@ -248,6 +248,21 @@ def test_recommendation_invalid_feedback_verdict_rejected():
         pass
 
 
+def test_recommendation_surfaces_similar_cases():
+    ctx = _ctx()
+    ctx["similar"] = [
+        {"ticket_number": "CAS-01005", "title": "FW: OCourt efiling down",
+         "description": "efiling unavailable", "score": 0.744},
+        {"ticket_number": "CAS-01019", "title": "OCourt Issue",
+         "description": "ocourt error", "score": 0.539},
+    ]
+    with _patch_llm(_full_llm_result()):
+        out = RecommendationAgent().run(ctx)
+    assert out.get("similar_cases")
+    assert out["similar_cases"][0]["ticket_number"] == "CAS-01005"
+    assert out["similar_cases"][0]["score"] == 0.744
+
+
 def test_recommendation_to_resolution_payload_serializes_tracks():
     with _patch_llm(_full_llm_result()):
         out = RecommendationAgent().run(_ctx())

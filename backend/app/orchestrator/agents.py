@@ -185,6 +185,22 @@ def _prior_resolution_summary(prior: Optional[dict]) -> str:
     return "; ".join(parts) or "Prior resolution exists but had no text."
 
 
+def _similar_cases(context: dict) -> list:
+    """Real similar cases the runner attached to context (top level or payload)."""
+    payload = (context.get("event", {}) or {}).get("payload", {}) or {}
+    return context.get("similar") or payload.get("similar") or []
+
+
+def _format_similar(similar: list, limit: int = 5) -> str:
+    lines = []
+    for s in similar[:limit]:
+        num = s.get("ticket_number") or s.get("id") or "?"
+        title = (s.get("title") or "").strip()
+        body = (s.get("description") or s.get("resolution_text") or "").strip().replace("\n", " ")
+        lines.append(f"- {num}: {title} :: {body[:200]}")
+    return "\n".join(lines)
+
+
 class RecommendationAgent:
     name = "recommendation"
 
@@ -306,33 +322,45 @@ class RecommendationAgent:
         title, desc, _ = _ticket_fields(context)
         prior = self._load_prior(context)
         diagnosis = context.get("diagnosis") or {}
+        similar = _similar_cases(context)
 
         user = (
             f"NEW ticket title: {title}\nDescription: {desc}\n"
             f"Diagnosis notes: {diagnosis.get('root_cause', '') or 'none'}\n"
             f"PRIOR RESOLUTION: {_prior_resolution_summary(prior)}"
         )
+        if similar:
+            user += ("\n\nSIMILAR PAST CASES (from our records, most similar first):\n"
+                     + _format_similar(similar))
+
         result = chat_json(_RECOMMENDATION_SYSTEM, user, max_tokens=700)
         if not result or "immediate_action" not in result or "durable_fix" not in result:
-            return self._fallback(context, prior)
-
-        delta = result.get("delta") or {}
-        if not prior and not delta.get("prior_fix_gap"):
-            delta.setdefault("prior_fix_summary", _prior_resolution_summary(prior))
-            delta["prior_fix_gap"] = "No prior resolution on record; treating as first recurrence."
-            delta.setdefault("original_fix_held", False)
-        rct = normalize_root_cause_type(result.get("root_cause_type"))
-        return self._assemble(
-            reference=str(result.get("reference", "")).strip(),
-            root_cause=result.get("root_cause", ""),
-            root_cause_type=rct,
-            delta=delta,
-            immediate=result.get("immediate_action") or {},
-            durable=result.get("durable_fix") or {},
-            prevention_entry=get_prevention(rct),
-            reasoning=result.get("reasoning", ""),
-            base_confidence=result.get("confidence", 0.6),
-        )
+            out = self._fallback(context, prior)
+        else:
+            delta = result.get("delta") or {}
+            if not prior and not delta.get("prior_fix_gap"):
+                delta.setdefault("prior_fix_summary", _prior_resolution_summary(prior))
+                delta["prior_fix_gap"] = "No prior resolution on record; treating as first recurrence."
+                delta.setdefault("original_fix_held", False)
+            rct = normalize_root_cause_type(result.get("root_cause_type"))
+            out = self._assemble(
+                reference=str(result.get("reference", "")).strip(),
+                root_cause=result.get("root_cause", ""),
+                root_cause_type=rct,
+                delta=delta,
+                immediate=result.get("immediate_action") or {},
+                durable=result.get("durable_fix") or {},
+                prevention_entry=get_prevention(rct),
+                reasoning=result.get("reasoning", ""),
+                base_confidence=result.get("confidence", 0.6),
+            )
+        # Surface the real matched cases so the D365 note can cite them.
+        if similar:
+            out["similar_cases"] = [
+                {"ticket_number": s.get("ticket_number"), "title": s.get("title"),
+                 "score": s.get("score")} for s in similar[:5]
+            ]
+        return out
 
 
 def recommendation_to_resolution_payload(advisory: dict, ticket_id=None) -> dict:
