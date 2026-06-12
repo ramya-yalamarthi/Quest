@@ -45,55 +45,60 @@ def _context(case: dict, similar: list) -> dict:
     }
 
 
+_DIV = "-" * 30
+
+
 def format_note(advisory: dict) -> str:
-    """Bind the three agents' outputs into the single Case note."""
+    """Bind the three agents into ONE crisp, bulleted Case note.
+
+    Plain timeline note -> CAPS headings (markdown bold won't render); the
+    incident URLs are raw so Dynamics auto-links them (clickable)."""
     r = advisory.get("routing") or {}
     d = advisory.get("diagnosis") or {}
     rec = advisory.get("recommendation") or {}
     hot = rec.get("hot_fix") or {}
     ult = rec.get("ultimate_fix") or {}
-    L = ["AI SUPPORT ANALYSIS", ""]
+    L = ["AI SUPPORT ANALYSIS", _DIV, ""]
 
-    # 1) Team assignment (conditional)
+    # TEAM ASSIGNMENT (conditional)
     L.append("TEAM ASSIGNMENT")
     if r.get("assignment_correct") is True:
-        L.append(f"  Correct - handled by {r.get('assigned_team')}")
+        L.append(f"• Correct — handled by {r.get('assigned_team')}")
     elif r.get("assignment_correct") is False:
-        L.append(f"  Incorrect - recommended team: {r.get('recommended_team')}")
+        L.append(f"• Incorrect — recommended team: {r.get('recommended_team')}")
     else:
-        L.append(f"  Recommended team: {r.get('recommended_team')}")
+        L.append(f"• Recommended team: {r.get('recommended_team')}")
     L.append("")
 
-    # 2) Diagnosis = root cause + similar past incidents (clickable, match %)
+    # DIAGNOSIS = root cause + similar incidents (clickable URL on its own line)
     L.append("DIAGNOSIS")
     if d.get("root_cause"):
-        L.append(f"  Root cause: {d['root_cause']}")
+        L.append(f"• Root cause: {d['root_cause']}")
     sims = d.get("similar_incidents") or []
     if sims:
-        L.append("  Similar past incidents:")
+        L.append("• Similar past incidents:")
         for s in sims:
-            line = f"    - {s.get('ticket_number')}: {s.get('title')}  ({_pct(s.get('score'))} match)"
+            L.append(f"   – {s.get('ticket_number')}  {s.get('title')}  ({_pct(s.get('score'))} match)")
             if s.get("url"):
-                line += f"\n      {s['url']}"
-            L.append(line)
+                L.append(f"     {s['url']}")
     L.append("")
 
-    # 3) Recommendation = Hot Fix + Ultimate Fix + reference links
+    # RECOMMENDATION = Hot Fix + Ultimate Fix + refs (crisp, one line each)
     L.append("RECOMMENDATION")
-    L.append(f"  Hot fix: {hot.get('summary', '')}")
-    for s in hot.get("steps", []):
-        L.append(f"    - {s}")
-    cm = "  [Change Management required]" if ult.get("requires_change_mgmt") else ""
-    L.append(f"  Ultimate fix: {ult.get('summary', '')}{cm}")
-    for s in ult.get("steps", []):
-        L.append(f"    - {s}")
+    he = f" ({hot['eta']})" if hot.get("eta") else ""
+    L.append(f"• Hot fix{he}: {hot.get('summary', '')}")
+    ue = f" ({ult['eta']})" if ult.get("eta") else ""
+    cm = "   ⚠ Change Management" if ult.get("requires_change_mgmt") else ""
+    L.append(f"• Ultimate fix{ue}: {ult.get('summary', '')}{cm}")
     links = rec.get("trusted_links") or []
     if links:
-        L.append("  Reference links:")
-        for ln in links:
-            L.append(f"    - {ln.get('title')}: {ln.get('url')}")
+        refs = " · ".join((ln.get("title") or ln.get("source") or "ref") for ln in links)
+        L.append(f"• Refs: {refs}")
     L.append("")
-    L.append(f"Confidence: {_pct(advisory.get('confidence'))}")
+
+    L.append(f"Confidence: {_pct(advisory.get('confidence'))}  (based on previous case data)")
+    L.append(_DIV)
+    L.append("Was this recommendation helpful?    \U0001f44d  /  \U0001f44e")
     return "\n".join(L)
 
 

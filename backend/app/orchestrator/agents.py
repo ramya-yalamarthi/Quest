@@ -120,10 +120,12 @@ _RECOMMENDATION_SYSTEM = (
     "change control, with a short justification.\n"
     "- REFERENCE LINKS: 1-3 PUBLIC links that match THIS specific problem, from "
     "Microsoft Learn/Docs, GitHub, Reddit, or Stack Overflow. Use real, relevant URLs.\n"
-    'Respond ONLY as JSON: {"hot_fix": {"summary": "...", "steps": ["..."]}, '
-    '"ultimate_fix": {"summary": "...", "steps": ["..."], "requires_change_mgmt": false, '
-    '"cm_justification": "..."}, "reference_links": [{"title": "...", "url": "...", '
-    '"source": "..."}], "confidence": 0.0}.'
+    "- Keep every summary to ONE short, crisp sentence -- main pointer only, no filler.\n"
+    "- Give a rough eta for each fix (hot fix in minutes, ultimate fix in hours).\n"
+    'Respond ONLY as JSON: {"hot_fix": {"summary": "...", "steps": ["..."], "eta": "~20 min"}, '
+    '"ultimate_fix": {"summary": "...", "steps": ["..."], "eta": "~4 hr", '
+    '"requires_change_mgmt": false, "cm_justification": "..."}, '
+    '"reference_links": [{"title": "...", "url": "...", "source": "..."}], "confidence": 0.0}.'
 )
 
 

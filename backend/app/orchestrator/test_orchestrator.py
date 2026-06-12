@@ -364,12 +364,13 @@ def test_d365_runner_full_pipeline_and_note():
     assert advisory.get("routing") and advisory.get("diagnosis") and advisory.get("recommendation")
     assert "AI SUPPORT ANALYSIS" in note
     assert "TEAM ASSIGNMENT" in note and "DIAGNOSIS" in note and "RECOMMENDATION" in note
-    assert "Hot fix:" in note and "Ultimate fix:" in note
-    assert "Reference links:" in note
+    assert "Hot fix" in note and "Ultimate fix" in note
+    assert "Refs:" in note
     assert "CAS-1" in note and "% match" in note          # similar case + percentage
     assert "main.aspx" in note                            # clickable D365 link
     assert advisory["diagnosis"]["similar_incidents"]     # similarity is part of diagnosis
-    assert "Confidence:" in note
+    assert "Confidence:" in note and "based on previous case data" in note
+    assert "Was this recommendation helpful" in note      # feedback prompt
 
 
 # --- D365 poller (automation) -----------------------------------------------

@@ -122,10 +122,18 @@ class DataverseClient:
 
     def case_has_note(self, case_id: str, subject: str) -> bool:
         """True if the Case already has an annotation with this subject (so the
-        poller is idempotent and never double-posts)."""
+        poller is idempotent and never double-posts).
+
+        NOTE: the query params MUST be URL-encoded (the filter contains spaces);
+        sending them raw makes Dataverse reject the request and this silently
+        return False -- which previously broke the poller's seeding."""
         subj = subject.replace("'", "''")
-        path = ("annotations?$select=annotationid&$top=1&$filter="
-                f"_objectid_value eq {case_id} and subject eq '{subj}'")
+        params = {
+            "$select": "annotationid",
+            "$top": "1",
+            "$filter": f"_objectid_value eq {case_id} and subject eq '{subj}'",
+        }
+        path = "annotations?" + urllib.parse.urlencode(params)
         try:
             data = self._request("GET", path) or {}
             return bool(data.get("value"))
