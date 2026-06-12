@@ -29,6 +29,8 @@ function onCaseFormLoad(executionContext) {
     var key = "airec_shown_" + caseId;
     try { if (window.sessionStorage.getItem(key)) return; } catch (e) {}
 
+    // Poll quickly (every 4s, up to ~4 min) so the pop-up shows almost the
+    // instant the note is ready.
     var attempts = 0;
     function check() {
         attempts++;
@@ -40,8 +42,8 @@ function onCaseFormLoad(executionContext) {
             if (res.entities && res.entities.length) {
                 try { if (window.sessionStorage.getItem(key)) return; window.sessionStorage.setItem(key, "1"); } catch (e) {}
                 _openDialog(caseId);                   // note is ready -> pop it up
-            } else if (attempts < 10) {
-                setTimeout(check, 20000);              // not ready yet -> check again in 20s
+            } else if (attempts < 60) {
+                setTimeout(check, 4000);               // not ready yet -> check again in 4s
             }
         }).catch(function () { /* ignore transient errors */ });
     }
