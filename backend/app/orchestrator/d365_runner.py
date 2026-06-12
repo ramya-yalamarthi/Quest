@@ -48,20 +48,46 @@ def _context(case: dict, similar: list) -> dict:
 _DIV = "-" * 30
 
 
+def _bold(s: str) -> str:
+    """Unicode sans-serif bold -- renders bold in plain text (no rich-text needed)."""
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if 65 <= o <= 90:      # A-Z
+            out.append(chr(0x1D5D4 + o - 65))
+        elif 97 <= o <= 122:   # a-z
+            out.append(chr(0x1D5EE + o - 97))
+        elif 48 <= o <= 57:    # 0-9
+            out.append(chr(0x1D7EC + o - 48))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _status(state) -> str:
+    return "✓ resolved" if state == 1 else "open"
+
+
 def format_note(advisory: dict) -> str:
     """Bind the three agents into ONE crisp, bulleted Case note.
 
-    Plain timeline note -> CAPS headings (markdown bold won't render); the
-    incident URLs are raw so Dynamics auto-links them (clickable)."""
+    Headings are real (Unicode) bold; incident URLs are raw so Dynamics
+    auto-links them (clickable)."""
     r = advisory.get("routing") or {}
     d = advisory.get("diagnosis") or {}
     rec = advisory.get("recommendation") or {}
     hot = rec.get("hot_fix") or {}
     ult = rec.get("ultimate_fix") or {}
-    L = ["AI SUPPORT ANALYSIS", _DIV, ""]
+    sims = d.get("similar_incidents") or []
+    links = rec.get("trusted_links") or []
+
+    L = [_bold("AI SUPPORT ANALYSIS"),
+         f"Confidence: {_pct(advisory.get('confidence'))}  "
+         f"(based on {len(sims)} similar tickets and {len(links)} references)",
+         _DIV, ""]
 
     # TEAM ASSIGNMENT (conditional)
-    L.append("TEAM ASSIGNMENT")
+    L.append(_bold("TEAM ASSIGNMENT"))
     if r.get("assignment_correct") is True:
         L.append(f"• Correct — handled by {r.get('assigned_team')}")
     elif r.get("assignment_correct") is False:
@@ -70,33 +96,31 @@ def format_note(advisory: dict) -> str:
         L.append(f"• Recommended team: {r.get('recommended_team')}")
     L.append("")
 
-    # DIAGNOSIS = root cause + similar incidents (clickable URL on its own line)
-    L.append("DIAGNOSIS")
+    # DIAGNOSIS = root cause + similar incidents (status + clickable URL)
+    L.append(_bold("DIAGNOSIS"))
     if d.get("root_cause"):
         L.append(f"• Root cause: {d['root_cause']}")
-    sims = d.get("similar_incidents") or []
     if sims:
         L.append("• Similar past incidents:")
         for s in sims:
-            L.append(f"   – {s.get('ticket_number')}  {s.get('title')}  ({_pct(s.get('score'))} match)")
+            L.append(f"   – {s.get('ticket_number')}  {s.get('title')}  "
+                     f"({_pct(s.get('score'))} match)  {_status(s.get('state'))}")
             if s.get("url"):
                 L.append(f"     {s['url']}")
     L.append("")
 
     # RECOMMENDATION = Hot Fix + Ultimate Fix + refs (crisp, one line each)
-    L.append("RECOMMENDATION")
+    L.append(_bold("RECOMMENDATION"))
     he = f" ({hot['eta']})" if hot.get("eta") else ""
     L.append(f"• Hot fix{he}: {hot.get('summary', '')}")
     ue = f" ({ult['eta']})" if ult.get("eta") else ""
     cm = "   ⚠ Change Management" if ult.get("requires_change_mgmt") else ""
     L.append(f"• Ultimate fix{ue}: {ult.get('summary', '')}{cm}")
-    links = rec.get("trusted_links") or []
     if links:
         refs = " · ".join((ln.get("title") or ln.get("source") or "ref") for ln in links)
         L.append(f"• Refs: {refs}")
     L.append("")
 
-    L.append(f"Confidence: {_pct(advisory.get('confidence'))}  (based on previous case data)")
     L.append(_DIV)
     L.append("Was this recommendation helpful?    \U0001f44d  /  \U0001f44e")
     return "\n".join(L)

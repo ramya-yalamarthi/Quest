@@ -98,7 +98,7 @@ class DataverseClient:
         created_after: ISO-8601 string; only cases created strictly after it.
         """
         params = {
-            "$select": "incidentid,ticketnumber,title,description,prioritycode,statuscode,createdon",
+            "$select": "incidentid,ticketnumber,title,description,prioritycode,statecode,statuscode,createdon",
             "$orderby": "createdon desc",
             "$top": str(top),
         }
@@ -117,6 +117,7 @@ class DataverseClient:
             "description": c.get("description") or "",
             "priority": c.get("prioritycode"),
             "status": c.get("statuscode"),
+            "state": c.get("statecode"),       # 0 active/open, 1 resolved, 2 cancelled
             "created_on": c.get("createdon"),
         }
 

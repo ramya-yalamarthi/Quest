@@ -351,25 +351,27 @@ def test_case_text_builds_title_and_description():
 # --- D365 runner: full pipeline -> one bound note ---------------------------
 
 def test_d365_runner_full_pipeline_and_note():
-    from app.orchestrator.d365_runner import process_case
+    from app.orchestrator.d365_runner import process_case, _bold
     case = {"id": "new", "ticket_number": "CAS-NEW",
             "title": "Coffee machine not heating", "description": "coffee"}
     corpus = [
-        {"id": "b", "ticket_number": "CAS-1", "title": "Coffeemaker won't heat", "description": "coffee"},
+        {"id": "b", "ticket_number": "CAS-1", "title": "Coffeemaker won't heat",
+         "description": "coffee", "state": 1},
         {"id": "a", "ticket_number": "CAS-2", "title": "Network down", "description": "network"},
     ]
     with _patch_llm(_llm_stub()):
         advisory, note = process_case(case, corpus,
                                       org_base="https://org.crm.dynamics.com", embed_fn=_fake_embed)
     assert advisory.get("routing") and advisory.get("diagnosis") and advisory.get("recommendation")
-    assert "AI SUPPORT ANALYSIS" in note
-    assert "TEAM ASSIGNMENT" in note and "DIAGNOSIS" in note and "RECOMMENDATION" in note
+    assert _bold("DIAGNOSIS") in note and _bold("RECOMMENDATION") in note   # bold headings
+    assert "Recommended team" in note and "Root cause" in note
     assert "Hot fix" in note and "Ultimate fix" in note
     assert "Refs:" in note
     assert "CAS-1" in note and "% match" in note          # similar case + percentage
+    assert "resolved" in note                             # incident status (state=1)
     assert "main.aspx" in note                            # clickable D365 link
-    assert advisory["diagnosis"]["similar_incidents"]     # similarity is part of diagnosis
-    assert "Confidence:" in note and "based on previous case data" in note
+    assert advisory["diagnosis"]["similar_incidents"]
+    assert "Confidence:" in note and "based on" in note and "similar tickets" in note
     assert "Was this recommendation helpful" in note      # feedback prompt
 
 
