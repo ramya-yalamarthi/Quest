@@ -2,7 +2,7 @@
 //  * openRecommendation(primaryControl)  -> wire to the "AI Recommendation" command-bar button.
 //  * onCaseFormLoad(executionContext)     -> register on the Case form OnLoad for the AUTO pop-up.
 
-var AIREC_DIALOG = "new_airec_dialog.html";   // <- use the EXACT web resource name after upload (publisher prefix)
+var AIREC_DIALOG = "new_new_airec_dialog";   // <- EXACT HTML web resource Name (no .html)
 
 function _openDialog(caseId) {
     return Xrm.Navigation.navigateTo(
