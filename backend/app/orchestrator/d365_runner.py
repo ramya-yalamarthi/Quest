@@ -11,12 +11,15 @@ Network-free / testable: the caller does the D365 read/write via DataverseClient
 
 from __future__ import annotations
 
+import os
 from typing import Callable, Optional
 
 from app.orchestrator.agents import RoutingAgent, DiagnosisAgent, RecommendationAgent
 from app.orchestrator.similarity import rank_similar
 
 NOTE_SUBJECT = "AI Support Recommendation"
+# Public base URL of the deployed orchestrator (where the feedback links point).
+DEFAULT_PUBLIC_URL = "https://quest-z7e4.onrender.com"
 
 
 def case_url(org_base: str, case_id: str) -> str:
@@ -122,7 +125,14 @@ def format_note(advisory: dict) -> str:
     L.append("")
 
     L.append(_DIV)
-    L.append("Was this recommendation helpful?    \U0001f44d  /  \U0001f44e")
+    like = advisory.get("feedback_like_url")
+    dislike = advisory.get("feedback_dislike_url")
+    if like and dislike:
+        L.append("Was this recommendation helpful?  (click to rate)")
+        L.append(f"   \U0001f44d Helpful  →  {like}")
+        L.append(f"   \U0001f44e Not helpful  →  {dislike}")
+    else:
+        L.append("Was this recommendation helpful?    \U0001f44d  /  \U0001f44e")
     return "\n".join(L)
 
 
@@ -130,6 +140,7 @@ def process_case(
     case: dict,
     corpus: list,
     org_base: str = "",
+    feedback_base: str = "",
     top_k: int = 4,
     min_score: float = 0.2,
     embed_fn: Optional[Callable] = None,
@@ -161,4 +172,12 @@ def process_case(
 
     advisory = {"routing": routing, "diagnosis": diagnosis,
                 "recommendation": recommendation, "confidence": confidence}
+
+    # Clickable feedback links -> the orchestrator's /feedback endpoint records
+    # the vote onto the case.
+    fb_base = (feedback_base or os.getenv("PUBLIC_BASE_URL", DEFAULT_PUBLIC_URL)).rstrip("/")
+    cid = case.get("id")
+    if fb_base and cid:
+        advisory["feedback_like_url"] = f"{fb_base}/orchestrator/feedback?case={cid}&v=like"
+        advisory["feedback_dislike_url"] = f"{fb_base}/orchestrator/feedback?case={cid}&v=dislike"
     return advisory, format_note(advisory)

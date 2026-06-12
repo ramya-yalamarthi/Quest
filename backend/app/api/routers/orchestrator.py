@@ -13,6 +13,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
@@ -179,3 +180,33 @@ def get_state(ticket_id: str):
 def health():
     """Liveness check for your teammate / ServiceNow connectivity test."""
     return {"status": "ok", "service": "orchestrator"}
+
+
+@router.get("/feedback", response_class=HTMLResponse)
+def record_feedback(case: str, v: str = "like"):
+    """Clickable 👍/👎 from the Case note land here. Records the vote as a
+    feedback note on the Case and shows a small thank-you page.
+
+    (Open GET on purpose so a plain link works; POC-grade -- add a signed token
+    if you want to prevent casual re-voting.)"""
+    verdict = "like" if str(v).lower() == "like" else "dislike"
+    label = "\U0001f44d Helpful" if verdict == "like" else "\U0001f44e Not helpful"
+    posted = False
+    try:
+        from app.orchestrator.dataverse import DataverseClient, available
+        if available():
+            DataverseClient().create_case_note(
+                case, "AI Recommendation Feedback",
+                f"Engineer rated the AI recommendation: {label}")
+            posted = True
+    except Exception:
+        posted = False
+    sub = "Recorded on the case — you can close this tab." if posted else "Thanks!"
+    emoji = label.split(" ", 1)[0]
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'><title>Feedback</title></head>"
+        "<body style='font-family:Segoe UI,Arial,sans-serif;text-align:center;padding:48px;color:#222'>"
+        f"<div style='font-size:46px'>{emoji}</div>"
+        "<h2>Thanks for your feedback!</h2>"
+        f"<p style='color:#666'>{sub}</p></body></html>"
+    )

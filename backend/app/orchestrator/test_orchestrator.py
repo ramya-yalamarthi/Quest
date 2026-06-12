@@ -373,6 +373,8 @@ def test_d365_runner_full_pipeline_and_note():
     assert advisory["diagnosis"]["similar_incidents"]
     assert "Confidence:" in note and "based on" in note and "similar tickets" in note
     assert "Was this recommendation helpful" in note      # feedback prompt
+    assert "/orchestrator/feedback?case=new" in note      # clickable like/dislike links
+    assert "v=like" in note and "v=dislike" in note
 
 
 # --- D365 poller (automation) -----------------------------------------------
