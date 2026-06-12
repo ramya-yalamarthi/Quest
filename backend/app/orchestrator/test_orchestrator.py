@@ -359,16 +359,19 @@ def test_d365_runner_full_pipeline_and_note():
          "description": "coffee", "state": 1},
         {"id": "a", "ticket_number": "CAS-2", "title": "Network down", "description": "network"},
     ]
+    fake_refs = lambda q, n=3: [{"title": "Manage quota",
+                                 "url": "https://learn.microsoft.com/azure/quota",
+                                 "source": "Microsoft Learn"}]
     with _patch_llm(_llm_stub()):
-        advisory, note = process_case(case, corpus,
-                                      org_base="https://org.crm.dynamics.com", embed_fn=_fake_embed)
+        advisory, note = process_case(case, corpus, org_base="https://org.crm.dynamics.com",
+                                      embed_fn=_fake_embed, ref_search_fn=fake_refs)
     assert advisory.get("routing") and advisory.get("diagnosis") and advisory.get("recommendation")
     assert "<b>DIAGNOSIS</b>" in note and "<b>RECOMMENDATION</b>" in note   # bold (HTML) headings
     assert "Assigned team:" in note and "Recommended team:" in note          # team fields
     assert "Root cause:" in note
     assert "Hot fix" in note and "Ultimate fix" in note
     assert "Change Management" not in note                # CM flag removed
-    assert "Refs:" in note
+    assert "Refs:" in note and "learn.microsoft.com/azure/quota" in note    # real clickable ref
     assert "CAS-1" in note and "% match" in note
     assert "resolved" in note                             # incident status (state=1)
     assert "<a href=" in note and "main.aspx" in note     # clickable incident link

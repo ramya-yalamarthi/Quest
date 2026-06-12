@@ -16,6 +16,7 @@ from typing import Callable, Optional
 
 from app.orchestrator.agents import RoutingAgent, DiagnosisAgent, RecommendationAgent
 from app.orchestrator.similarity import rank_similar
+from app.orchestrator.web_refs import search_refs
 
 NOTE_SUBJECT = "AI Support Recommendation"
 # Public base URL of the deployed orchestrator (where the feedback links point).
@@ -109,8 +110,12 @@ def format_note(advisory: dict) -> str:
     ue = f" ({_esc(ult['eta'])})" if ult.get("eta") else ""
     P.append(f"• Ultimate fix{ue}: {_esc(ult.get('summary', ''))}")
     if links:
-        refs = " · ".join(_esc(ln.get("title") or ln.get("source") or "ref") for ln in links)
-        P.append(f"• Refs: {refs}")
+        parts = []
+        for ln in links:
+            title = _esc(ln.get("title") or ln.get("source") or "ref")
+            u = ln.get("url")
+            parts.append(f'<a href="{_href(u)}">{title}</a>' if u else title)
+        P.append("• Refs: " + " · ".join(parts))
     P.append("")
 
     like = advisory.get("feedback_like_url")
@@ -131,6 +136,7 @@ def process_case(
     min_score: float = 0.2,
     embed_fn: Optional[Callable] = None,
     agents: Optional[dict] = None,
+    ref_search_fn: Optional[Callable] = None,
 ) -> tuple:
     """Run Routing -> Diagnosis -> Recommendation for `case`, grounded in the
     similar `corpus` cases, and bind into one note. Returns (advisory, note)."""
@@ -149,6 +155,16 @@ def process_case(
     diagnosis = {**diag, "similar_incidents": similar}  # similarity is part of diagnosis
     context["diagnosis"] = diag
     recommendation = rec_agent.run(context)            # hot + ultimate fix + links
+
+    # Option B: replace the model's reference links with REAL Microsoft Learn
+    # search results (fall back to the model's links if search returns nothing).
+    search = ref_search_fn if ref_search_fn is not None else search_refs
+    try:
+        web = search(f"{case.get('title', '')} {diag.get('root_cause', '')}".strip(), 3)
+    except Exception:
+        web = []
+    if web:
+        recommendation["trusted_links"] = web
 
     # Meaningful confidence: blend the model's confidence with the strength of
     # the best real-case match (the actual evidence).
