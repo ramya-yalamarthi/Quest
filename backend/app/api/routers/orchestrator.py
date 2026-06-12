@@ -182,6 +182,41 @@ def health():
     return {"status": "ok", "service": "orchestrator"}
 
 
+@router.get("/recommendation", response_class=HTMLResponse)
+def get_recommendation(case: str):
+    """Return the AI recommendation for a Case as HTML (for the D365 pop-up
+    dialog). Serves the latest saved note; if none exists yet, generates one,
+    saves it, and returns it. CORS is open (see orchestrator_server.py)."""
+    try:
+        from app.orchestrator.dataverse import DataverseClient, available
+        if not available():
+            return "<p style='font-family:Segoe UI,Arial'>Service not configured.</p>"
+        import urllib.parse
+        client = DataverseClient()
+        case = case.replace("{", "").replace("}", "").strip()
+        params = {
+            "$select": "notetext,createdon", "$top": "1", "$orderby": "createdon desc",
+            "$filter": f"_objectid_value eq {case} and subject eq 'AI Support Recommendation'",
+        }
+        rows = (client._request("GET", "annotations?" + urllib.parse.urlencode(params)) or {}).get("value", [])
+        if rows and rows[0].get("notetext"):
+            return rows[0]["notetext"]                 # latest saved recommendation
+        # none yet -> generate fresh, save, and return
+        from app.orchestrator.d365_runner import process_case, NOTE_SUBJECT
+        corpus = client.list_cases(top=100)
+        target = next((cc for cc in corpus if cc.get("id") == case), None)
+        if not target:
+            return "<p style='font-family:Segoe UI,Arial'>No recommendation found for this case.</p>"
+        _, note = process_case(target, corpus, org_base=client.cfg["base"])
+        try:
+            client.create_case_note(case, NOTE_SUBJECT, note)
+        except Exception:
+            pass
+        return note
+    except Exception as exc:
+        return f"<p style='font-family:Segoe UI,Arial'>Could not load recommendation: {exc}</p>"
+
+
 @router.get("/feedback", response_class=HTMLResponse)
 def record_feedback(case: str, v: str = "like"):
     """Clickable 👍/👎 from the Case note land here. Records the vote as a

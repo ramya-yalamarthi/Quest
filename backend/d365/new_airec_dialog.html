@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Recommendation</title>
+  <style>
+    body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f3f2f1; color: #201f1e; }
+    .wrap { padding: 16px; }
+    .card { background: #fff; border: 1px solid #edebe9; border-radius: 8px; padding: 18px 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,.08); line-height: 1.55; font-size: 14px; word-wrap: break-word; }
+    .card b { color: #0f3d6e; font-size: 13px; letter-spacing: .3px; }
+    .card a { color: #0078d4; text-decoration: none; }
+    .card a:hover { text-decoration: underline; }
+    .spinner { display: flex; align-items: center; gap: 10px; color: #605e5c; padding: 24px; }
+    .dot { width: 16px; height: 16px; border: 3px solid #c8c6c4; border-top-color: #0078d4;
+           border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err { color: #a4262c; padding: 16px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="content" class="card">
+      <div class="spinner"><div class="dot"></div> Loading recommendation…</div>
+    </div>
+  </div>
+
+  <script>
+    // Your deployed backend endpoint that returns the recommendation HTML for a case.
+    var BACKEND = "https://quest-z7e4.onrender.com/orchestrator/recommendation";
+
+    // D365 passes the navigateTo 'data' value in the 'data' query-string param.
+    function getCaseId() {
+      var p = new URLSearchParams(window.location.search);
+      var d = p.get("data") || p.get("id") || "";
+      return d.replace(/[{}]/g, "").trim();
+    }
+
+    (function () {
+      var el = document.getElementById("content");
+      var caseId = getCaseId();
+      if (!caseId) {
+        el.innerHTML = '<div class="err">No case id was passed to the dialog.</div>';
+        return;
+      }
+      fetch(BACKEND + "?case=" + encodeURIComponent(caseId))
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(function (html) { el.innerHTML = html; })
+        .catch(function (e) {
+          el.innerHTML = '<div class="err">Could not load the recommendation (' + e +
+            ').<br>If this persists it may be a D365 content-security policy blocking the external call — '
+            + 'switch to the Xrm.WebApi version (see new_airec.js comments).</div>';
+        });
+    })();
+  </script>
+</body>
+</html>
