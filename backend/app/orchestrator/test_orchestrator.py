@@ -351,7 +351,7 @@ def test_case_text_builds_title_and_description():
 # --- D365 runner: full pipeline -> one bound note ---------------------------
 
 def test_d365_runner_full_pipeline_and_note():
-    from app.orchestrator.d365_runner import process_case, _bold
+    from app.orchestrator.d365_runner import process_case
     case = {"id": "new", "ticket_number": "CAS-NEW",
             "title": "Coffee machine not heating", "description": "coffee"}
     corpus = [
@@ -363,18 +363,20 @@ def test_d365_runner_full_pipeline_and_note():
         advisory, note = process_case(case, corpus,
                                       org_base="https://org.crm.dynamics.com", embed_fn=_fake_embed)
     assert advisory.get("routing") and advisory.get("diagnosis") and advisory.get("recommendation")
-    assert _bold("DIAGNOSIS") in note and _bold("RECOMMENDATION") in note   # bold headings
-    assert "Recommended team" in note and "Root cause" in note
+    assert "<b>DIAGNOSIS</b>" in note and "<b>RECOMMENDATION</b>" in note   # bold (HTML) headings
+    assert "Assigned team:" in note and "Recommended team:" in note          # team fields
+    assert "Root cause:" in note
     assert "Hot fix" in note and "Ultimate fix" in note
+    assert "Change Management" not in note                # CM flag removed
     assert "Refs:" in note
-    assert "CAS-1" in note and "% match" in note          # similar case + percentage
+    assert "CAS-1" in note and "% match" in note
     assert "resolved" in note                             # incident status (state=1)
-    assert "main.aspx" in note                            # clickable D365 link
+    assert "<a href=" in note and "main.aspx" in note     # clickable incident link
     assert advisory["diagnosis"]["similar_incidents"]
     assert "Confidence:" in note and "based on" in note and "similar tickets" in note
-    assert "Was this recommendation helpful" in note      # feedback prompt
-    assert "/orchestrator/feedback?case=new" in note      # clickable like/dislike links
-    assert "v=like" in note and "v=dislike" in note
+    assert "Was this recommendation helpful" in note
+    assert "/orchestrator/feedback?case=new" in note      # clickable feedback
+    assert "\U0001f44d" in note and "\U0001f44e" in note  # plain 👍 / 👎 emojis
 
 
 # --- D365 poller (automation) -----------------------------------------------
