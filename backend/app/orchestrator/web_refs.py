@@ -24,6 +24,32 @@ _UA = "Mozilla/5.0 (compatible; SupportAI/1.0)"
 _BOT_BLOCKED = {401, 403, 405, 429, 503}
 
 
+# Community / Q&A / forum / blog pages are NOT official documentation -- the
+# recommendation must cite product docs, not forum threads or community answers.
+_NON_DOC_HOSTS = {"stackoverflow.com", "serverfault.com", "superuser.com", "reddit.com"}
+
+
+def is_official_doc(url: str) -> bool:
+    """True only for official product-documentation URLs. Excludes Q&A, forum,
+    community-answer and blog pages (e.g. Microsoft Q&A at /answers, dev blogs,
+    Tech Community, Stack Overflow/Reddit)."""
+    try:
+        p = urllib.parse.urlparse(url)
+        host = (p.hostname or "").lower()
+        path = (p.path or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    if any(host == d or host.endswith("." + d) for d in _NON_DOC_HOSTS):
+        return False
+    if "/answers" in path or "/qa/" in path:                 # Microsoft Q&A etc.
+        return False
+    if host.startswith("blogs.") or "devblogs" in host or "techcommunity" in host or "/blog" in path:
+        return False
+    return True
+
+
 def link_resolves(url: str, timeout: int = 5) -> bool:
     """True if the URL actually resolves (so we never show a dead/hallucinated
     link). 2xx/3xx = good; bot-block codes = good (page exists); 404/410/error =
@@ -58,6 +84,8 @@ def validate_links(links: list[dict], count: int = 3, timeout: int = 5) -> list[
         if not url or url in seen:
             continue
         seen.add(url)
+        if not is_official_doc(url):                  # drop Q&A / forum / blog pages
+            continue
         if link_resolves(url, timeout=timeout):
             label = source_label(url) or ln.get("source") or "ref"
             out.append({"title": ln.get("title") or label, "url": url, "source": label})

@@ -475,6 +475,17 @@ def test_ungrounded_diagnosis_caps_confidence():
     assert adv2["confidence"] > 0.6                 # grounded -> not capped
 
 
+def test_is_official_doc_filters_qa_and_forums():
+    from app.orchestrator.web_refs import is_official_doc
+    assert is_official_doc("https://learn.microsoft.com/en-us/sql/relational-databases/x")
+    assert is_official_doc("https://www.postgresql.org/docs/current/routine-vacuuming.html")
+    assert not is_official_doc("https://learn.microsoft.com/en-us/answers/questions/123/phishing")
+    assert not is_official_doc("https://stackoverflow.com/questions/123")
+    assert not is_official_doc("https://techcommunity.microsoft.com/t5/x")
+    assert not is_official_doc("https://devblogs.microsoft.com/x")
+    assert not is_official_doc("https://www.reddit.com/r/sysadmin/x")
+
+
 # --- Mitigation agent (auto-remediation) ------------------------------------
 def test_mitigation_matches_and_gate_passes():
     from app.orchestrator.mitigation import assess

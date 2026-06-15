@@ -17,7 +17,7 @@ from typing import Callable, Optional
 from app.orchestrator.agents import RoutingAgent, DiagnosisAgent, RecommendationAgent
 from app.orchestrator.mitigation import assess as mitigation_assess
 from app.orchestrator.similarity import rank_similar
-from app.orchestrator.web_refs import search_refs, validate_links
+from app.orchestrator.web_refs import search_refs, validate_links, is_official_doc
 
 NOTE_SUBJECT = "AI Support Recommendation"
 # Public base URL of the deployed orchestrator (where the feedback links point).
@@ -198,10 +198,10 @@ def process_case(
         links = []
     if not links:
         try:                                           # focused query = the title alone
-            extra = search(case.get("title", "").strip(), 2)
+            extra = search(case.get("title", "").strip(), 4)
         except Exception:
             extra = []
-        links = (extra or [])[:2]
+        links = [e for e in (extra or []) if is_official_doc(e.get("url", ""))][:2]
     recommendation["trusted_links"] = links
 
     # Meaningful confidence: blend the model's confidence with the strength of
