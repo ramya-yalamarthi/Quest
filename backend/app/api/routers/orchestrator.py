@@ -12,7 +12,9 @@ REDIS_URL is unset) and writes its audit trail to Postgres ai_audit_log.
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+import os
+
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
@@ -153,6 +155,57 @@ def ingest_event(evt: WebhookEvent):
     """O-07: receive an ICM event and run the first agent in the pipeline."""
     record = _orchestrator.handle_event(evt.model_dump(exclude_none=True))
     return _summary(record)
+
+
+class D365CaseEvent(BaseModel):
+    """Payload the Power Automate flow (or a Dataverse webhook) POSTs when a new
+    Case is created. Send the Case GUID as `id` (or `incidentid`), or the
+    `ticketnumber`. Extra fields are tolerated."""
+    model_config = ConfigDict(extra="allow")
+
+    id: Optional[str] = None
+    incidentid: Optional[str] = None
+    ticketnumber: Optional[str] = None
+
+
+@router.post("/d365-webhook")
+def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(default=None)):
+    """Event-driven entry point: a new D365 Case fires this (via Power Automate),
+    so the AI note appears in SECONDS instead of waiting for the ~2-min poller.
+    Runs the SAME pipeline + auto-remediation as the poller, and is idempotent
+    (skips a Case that already has the AI note).
+
+    Auth: if the WEBHOOK_SECRET env var is set, the caller MUST send the same
+    value in the `X-Webhook-Secret` header."""
+    secret = os.getenv("WEBHOOK_SECRET")
+    if secret and x_webhook_secret != secret:
+        raise HTTPException(status_code=401, detail="invalid webhook secret")
+
+    from app.orchestrator.dataverse import DataverseClient, available
+    if not available():
+        raise HTTPException(status_code=503, detail="Dataverse not configured")
+    client = DataverseClient()
+
+    cid = (evt.id or evt.incidentid or "").strip()
+    num = (evt.ticketnumber or "").strip()
+    case = client.get_case(cid) if cid else (client.get_case_by_number(num) if num else None)
+    if not case:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    from app.orchestrator.d365_runner import process_case, NOTE_SUBJECT
+    if client.case_has_note(case["id"], NOTE_SUBJECT):
+        return {"status": "already_processed", "ticket": case["ticket_number"]}
+
+    corpus = client.list_cases(top=100)
+    advisory, note = process_case(case, corpus, org_base=client.cfg["base"])
+    client.create_case_note(case["id"], NOTE_SUBJECT, note)
+
+    from app.orchestrator.d365_poller import _auto_resolve
+    _auto_resolve(client, case, advisory)          # close it if the mitigation gate passed
+
+    mit = advisory.get("mitigation") or {}
+    return {"status": "processed", "ticket": case["ticket_number"],
+            "auto_resolved": bool(mit.get("gate_passed"))}
 
 
 @router.post("/decision")

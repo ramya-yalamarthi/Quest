@@ -132,6 +132,24 @@ class DataverseClient:
             "created_on": c.get("createdon"),
         }
 
+    _CASE_SELECT = ("incidentid,ticketnumber,title,description,prioritycode,"
+                    "statecode,statuscode,createdon")
+
+    def get_case(self, case_id: str) -> Optional[dict]:
+        """Fetch one Case by its GUID (for the event-driven webhook)."""
+        data = self._request("GET", f"incidents({case_id})?$select={self._CASE_SELECT}")
+        return self._normalise_case(data) if data else None
+
+    def get_case_by_number(self, ticket_number: str) -> Optional[dict]:
+        """Fetch one Case by its ticket number (CAS-...)."""
+        num = ticket_number.replace("'", "''")
+        params = urllib.parse.urlencode({
+            "$select": self._CASE_SELECT, "$top": "1",
+            "$filter": f"ticketnumber eq '{num}'",
+        })
+        rows = (self._request("GET", "incidents?" + params) or {}).get("value", [])
+        return self._normalise_case(rows[0]) if rows else None
+
     def case_has_note(self, case_id: str, subject: str) -> bool:
         """True if the Case already has an annotation with this subject (so the
         poller is idempotent and never double-posts).

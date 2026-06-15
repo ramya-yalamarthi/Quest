@@ -549,6 +549,25 @@ def test_poller_does_not_resolve_suggest_only():
     assert processed == ["CAS-8"] and client.resolved == []      # suggest-only, not closed
 
 
+def test_d365_webhook_rejects_bad_secret():
+    import os
+    from fastapi import HTTPException
+    from app.api.routers.orchestrator import d365_webhook, D365CaseEvent
+    old = os.environ.get("WEBHOOK_SECRET")
+    os.environ["WEBHOOK_SECRET"] = "s3cret"
+    try:
+        try:
+            d365_webhook(D365CaseEvent(id="x"), x_webhook_secret="WRONG")
+            assert False, "expected 401"
+        except HTTPException as e:
+            assert e.status_code == 401
+    finally:
+        if old is None:
+            os.environ.pop("WEBHOOK_SECRET", None)
+        else:
+            os.environ["WEBHOOK_SECRET"] = old
+
+
 def _main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:
