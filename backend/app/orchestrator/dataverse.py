@@ -199,6 +199,14 @@ class DataverseClient:
             out = json.loads(raw) if raw else {}
         return out.get("annotationid")
 
+    def update_case_note(self, annotation_id: str, text: str) -> None:
+        """Replace a Note's text -- used to fill in a placeholder note."""
+        self._request("PATCH", f"annotations({annotation_id})", {"notetext": text})
+
+    def delete_note(self, annotation_id: str) -> None:
+        """Delete a Note (e.g. roll back a placeholder if processing failed)."""
+        self._request("DELETE", f"annotations({annotation_id})")
+
     def close_incident(self, case_id: str, subject: str, text: str = "",
                        status: int = 5) -> bool:
         """Resolve + close a Case via the CloseIncident action (the genuinely

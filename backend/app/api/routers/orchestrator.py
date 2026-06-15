@@ -196,19 +196,34 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
     if client.case_has_note(case["id"], NOTE_SUBJECT):
         return {"status": "already_processed", "ticket": case["ticket_number"]}
 
-    # De-dup: a slow (~20s) call makes Power Automate RETRY, and each retry would
-    # post another note. Claim the case so only the first caller processes it;
-    # concurrent retries return immediately.
+    # De-dup: a slow (~20s) call makes Power Automate RETRY. The in-memory claim
+    # blocks same-instance retries; the PERSISTENT placeholder note below blocks
+    # retries on OTHER instances (Render may run more than one).
     from app.orchestrator.dedup import claim, release
     if not claim(case["id"]):
         return {"status": "already_processing", "ticket": case["ticket_number"]}
+    # Drop a placeholder note immediately -> any concurrent retry now sees
+    # case_has_note == True and returns 'already_processed' before posting.
+    try:
+        ann_id = client.create_case_note(
+            case["id"], NOTE_SUBJECT, "<i>\U0001f916 AI analysis in progress…</i>")
+    except Exception:
+        ann_id = None
     try:
         corpus = client.list_cases(top=100)
         advisory, note = process_case(case, corpus, org_base=client.cfg["base"])
-        client.create_case_note(case["id"], NOTE_SUBJECT, note)
+        if ann_id:
+            client.update_case_note(ann_id, note)  # fill in the placeholder
+        else:
+            client.create_case_note(case["id"], NOTE_SUBJECT, note)
         from app.orchestrator.d365_poller import _auto_resolve
         _auto_resolve(client, case, advisory)      # close it if the mitigation gate passed
     except Exception:
+        if ann_id:
+            try:
+                client.delete_note(ann_id)         # roll back the placeholder
+            except Exception:
+                pass
         release(case["id"])                        # allow a retry on hard failure
         raise
 
@@ -263,21 +278,15 @@ def get_recommendation(case: str):
         rows = (client._request("GET", "annotations?" + urllib.parse.urlencode(params)) or {}).get("value", [])
         if rows and rows[0].get("notetext"):
             return rows[0]["notetext"]                 # latest saved recommendation
-        # none yet -> generate for display. SAVE only if we win the dedup claim and
-        # no note appeared meanwhile, so this pop-up never races the webhook into a
-        # duplicate note (it generates for display either way).
-        from app.orchestrator.d365_runner import process_case, NOTE_SUBJECT
-        from app.orchestrator.dedup import claim
+        # none yet -> generate for DISPLAY ONLY. The webhook is the SINGLE writer of
+        # timeline notes, so the pop-up never creates one -> it can't race the
+        # webhook into a duplicate note.
+        from app.orchestrator.d365_runner import process_case
         corpus = client.list_cases(top=100)
         target = next((cc for cc in corpus if cc.get("id") == case), None)
         if not target:
             return "<p style='font-family:Segoe UI,Arial'>No recommendation found for this case.</p>"
         _, note = process_case(target, corpus, org_base=client.cfg["base"])
-        if claim(case) and not client.case_has_note(case, NOTE_SUBJECT):
-            try:
-                client.create_case_note(case, NOTE_SUBJECT, note)
-            except Exception:
-                pass
         return note
     except Exception as exc:
         return f"<p style='font-family:Segoe UI,Arial'>Could not load recommendation: {exc}</p>"
