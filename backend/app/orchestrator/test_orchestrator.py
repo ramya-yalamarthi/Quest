@@ -362,9 +362,11 @@ def test_d365_runner_full_pipeline_and_note():
     fake_refs = lambda q, n=3: [{"title": "Manage quota",
                                  "url": "https://learn.microsoft.com/azure/quota",
                                  "source": "Microsoft Learn"}]
+    passthrough = lambda links, n=3: links            # skip real HTTP validation in tests
     with _patch_llm(_llm_stub()):
         advisory, note = process_case(case, corpus, org_base="https://org.crm.dynamics.com",
-                                      embed_fn=_fake_embed, ref_search_fn=fake_refs)
+                                      embed_fn=_fake_embed, ref_search_fn=fake_refs,
+                                      link_validate_fn=passthrough)
     assert advisory.get("routing") and advisory.get("diagnosis") and advisory.get("recommendation")
     assert "<b>DIAGNOSIS</b>" in note and "<b>RECOMMENDATION</b>" in note   # bold (HTML) headings
     assert "Assigned team:" in note and "Recommended team:" in note          # team fields
@@ -391,6 +393,7 @@ class _FakeClient:
         self._cases = cases
         self._noted = noted or set()
         self.posted = []
+        self.resolved = []
 
     def list_cases(self, top=100):
         return list(self._cases)[:top]
@@ -401,6 +404,10 @@ class _FakeClient:
     def create_case_note(self, case_id, subject, text):
         self.posted.append(case_id)
         return "ann-" + case_id
+
+    def close_incident(self, case_id, subject, text="", status=5):
+        self.resolved.append(case_id)
+        return True
 
 
 def _fake_proc(case, corpus):
@@ -441,6 +448,61 @@ def test_poller_is_idempotent_skips_noted():
     client = _FakeClient(cases, noted={"2"})        # already has an AI note
     processed, _ = poll_once(client, since="2026-06-11T09:30:00Z", process_fn=_fake_proc)
     assert processed == [] and client.posted == []
+
+
+# --- Mitigation agent (auto-remediation) ------------------------------------
+def test_mitigation_matches_and_gate_passes():
+    from app.orchestrator.mitigation import assess
+    case = {"title": "User locked out", "description": "account locked, password reset, mfa stale"}
+    similar = [{"ticket_number": "CAS-01100", "display_score": 0.95}]
+    m = assess(case, similar, confidence=0.92)
+    assert m["matched"] and m["gate_passed"]
+    assert m["recipe_key"] == "account_lockout" and m["recipe_match"] == 1.0
+    assert m["executed"] and all(s.endswith("✓") for s in m["executed"])
+
+
+def test_mitigation_no_runbook_is_suggest_only():
+    from app.orchestrator.mitigation import assess
+    case = {"title": "Printer feeding multiple sheets and jamming", "description": "HR floor MFP"}
+    m = assess(case, [{"ticket_number": "X", "display_score": 0.9}], confidence=0.95)
+    assert not m["matched"] and not m["gate_passed"]
+
+
+def test_mitigation_novel_precedent_blocks_gate():
+    from app.orchestrator.mitigation import assess
+    case = {"title": "Account locked out", "description": "password reset needed"}
+    m = assess(case, [{"ticket_number": "X", "display_score": 0.5}], confidence=0.95)
+    assert m["matched"] and not m["gate_passed"] and "novel" in m["gate_reason"]
+
+
+def test_mitigation_low_confidence_blocks_gate():
+    from app.orchestrator.mitigation import assess
+    case = {"title": "Account locked out", "description": "password reset, mfa"}
+    m = assess(case, [{"ticket_number": "X", "display_score": 0.95}], confidence=0.6)
+    assert m["matched"] and not m["gate_passed"] and "confidence" in m["gate_reason"]
+
+
+def test_poller_auto_resolves_when_gate_passed():
+    from app.orchestrator.d365_poller import poll_once
+    cases = [{"id": "9", "ticket_number": "CAS-9", "title": "locked out", "description": "x",
+              "created_on": "2026-06-11T10:00:00Z"}]
+    client = _FakeClient(cases)
+    adv = {"mitigation": {"gate_passed": True, "recipe_name": "Account Lockout",
+                          "recipe_key": "account_lockout", "confidence": 0.9,
+                          "precedent_match": 0.95, "resolution_text": "done"}}
+    processed, _ = poll_once(client, since="2026-06-11T09:00:00Z",
+                             process_fn=lambda case, corp: (adv, "note"))
+    assert processed == ["CAS-9"] and client.resolved == ["9"]   # auto-closed
+
+
+def test_poller_does_not_resolve_suggest_only():
+    from app.orchestrator.d365_poller import poll_once
+    cases = [{"id": "8", "ticket_number": "CAS-8", "title": "printer jam", "description": "x",
+              "created_on": "2026-06-11T10:00:00Z"}]
+    client = _FakeClient(cases)
+    processed, _ = poll_once(client, since="2026-06-11T09:00:00Z",
+                             process_fn=lambda case, corp: ({"mitigation": {"gate_passed": False}}, "note"))
+    assert processed == ["CAS-8"] and client.resolved == []      # suggest-only, not closed
 
 
 def _main():

@@ -15,12 +15,16 @@ import os
 from typing import Callable, Optional
 
 from app.orchestrator.agents import RoutingAgent, DiagnosisAgent, RecommendationAgent
+from app.orchestrator.mitigation import assess as mitigation_assess
 from app.orchestrator.similarity import rank_similar
-from app.orchestrator.web_refs import search_refs
+from app.orchestrator.web_refs import search_refs, validate_links
 
 NOTE_SUBJECT = "AI Support Recommendation"
 # Public base URL of the deployed orchestrator (where the feedback links point).
 DEFAULT_PUBLIC_URL = "https://quest-z7e4.onrender.com"
+# Hide matches weaker than this CALIBRATED relevance from the note (the weak
+# tail), but always keep the single strongest match.
+MIN_DISPLAY = 0.35
 
 
 def case_url(org_base: str, case_id: str) -> str:
@@ -74,6 +78,25 @@ def format_note(advisory: dict) -> str:
     links = rec.get("trusted_links") or []
     P = []
 
+    mit = advisory.get("mitigation") or {}
+    if mit.get("gate_passed"):
+        name = _esc(mit.get("recipe_name"))
+        P.append(f"<b>🤖 AUTO-REMEDIATION — {name}</b>")
+        P.append(f"✓ Matched the {name} runbook — 100% (signature confirmed)")
+        prec = mit.get("precedent_ticket")
+        prec_txt = (f" · precedent {_esc(prec)} ({_pct(mit.get('precedent_match'))})"
+                    if prec else "")
+        P.append(f"• Confidence: {_pct(mit.get('confidence'))} · "
+                 f"Tier {_esc(mit.get('tier'))} (reversible){prec_txt}")
+        P.append("• Actions executed:")
+        for line in mit.get("executed", []):
+            P.append(f"&nbsp;&nbsp;– {_esc(line)}")
+        P.append(f"• Verification: {_esc(mit.get('verify'))} ✓")
+        P.append("• Outcome: Case auto-resolved by the AI agent.")
+        P.append("<i>External actions simulated in this environment; the D365 "
+                 "resolve/close is live.</i>")
+        P.append("")
+
     P.append("<b>AI SUPPORT ANALYSIS</b>")
     P.append(f"Confidence: {_pct(advisory.get('confidence'))} "
              f"(based on {len(sims)} similar tickets and {len(links)} references)")
@@ -101,7 +124,8 @@ def format_note(advisory: dict) -> str:
             label = _esc(f"{s.get('ticket_number')} — {s.get('title')}")
             url = s.get("url") or ""
             link = f'<a href="{_href(url)}">{label}</a>' if url else label
-            P.append(f"&nbsp;&nbsp;– {link} ({_pct(s.get('score'))} match) · {_status(s.get('state'))}")
+            shown_score = s.get("display_score", s.get("score"))
+            P.append(f"&nbsp;&nbsp;– {link} ({_pct(shown_score)} match) · {_status(s.get('state'))}")
     P.append("")
 
     P.append("<b>RECOMMENDATION</b>")
@@ -137,6 +161,7 @@ def process_case(
     embed_fn: Optional[Callable] = None,
     agents: Optional[dict] = None,
     ref_search_fn: Optional[Callable] = None,
+    link_validate_fn: Optional[Callable] = None,
 ) -> tuple:
     """Run Routing -> Diagnosis -> Recommendation for `case`, grounded in the
     similar `corpus` cases, and bind into one note. Returns (advisory, note)."""
@@ -148,32 +173,49 @@ def process_case(
     similar = rank_similar(case, corpus, top_k=top_k, min_score=min_score, embed_fn=embed_fn)
     for s in similar:                                  # add clickable D365 links
         s["url"] = case_url(org_base, s.get("id"))
-    context = _context(case, similar)
+    context = _context(case, similar)                  # agents ground on ALL matches
 
     routing = routing_agent.run(context)               # team check
     diag = diagnosis_agent.run(context)                # root cause
-    diagnosis = {**diag, "similar_incidents": similar}  # similarity is part of diagnosis
+    # In the NOTE, show only matches that are reasonably relevant after
+    # calibration (hide the weak tail), but always keep the strongest one.
+    shown = [s for s in similar if s.get("display_score", 0) >= MIN_DISPLAY] or similar[:1]
+    diagnosis = {**diag, "similar_incidents": shown}    # similarity is part of diagnosis
     context["diagnosis"] = diag
     recommendation = rec_agent.run(context)            # hot + ultimate fix + links
 
-    # Option B: replace the model's reference links with REAL Microsoft Learn
-    # search results (fall back to the model's links if search returns nothing).
+    # Reference links: the agent proposes the OFFICIAL doc for the case's actual
+    # technology (Microsoft Learn / PostgreSQL / Cisco / vendor KB / ...). We then
+    # VALIDATE each one actually resolves (so we never show a dead link), and only
+    # if we come up short do we backfill from a focused Microsoft Learn search.
+    validate = link_validate_fn if link_validate_fn is not None else validate_links
     search = ref_search_fn if ref_search_fn is not None else search_refs
     try:
-        web = search(f"{case.get('title', '')} {diag.get('root_cause', '')}".strip(), 3)
+        links = validate(recommendation.get("trusted_links") or [], 3)
     except Exception:
-        web = []
-    if web:
-        recommendation["trusted_links"] = web
+        links = []
+    if len(links) < 3:
+        try:                                           # focused query = the title alone
+            extra = search(case.get("title", "").strip(), 3)
+        except Exception:
+            extra = []
+        have = {l["url"] for l in links}
+        links += [e for e in (extra or []) if e.get("url") not in have][: 3 - len(links)]
+    recommendation["trusted_links"] = links
 
     # Meaningful confidence: blend the model's confidence with the strength of
-    # the best real-case match (the actual evidence).
-    top_match = similar[0]["score"] if similar else None
+    # the best real-case match (calibrated relevance, the actual evidence).
+    top_match = similar[0].get("display_score", similar[0]["score"]) if similar else None
     llm_conf = recommendation.get("confidence", 0.5)
     confidence = round((0.5 * llm_conf + 0.5 * top_match), 2) if top_match is not None else llm_conf
 
     advisory = {"routing": routing, "diagnosis": diagnosis,
                 "recommendation": recommendation, "confidence": confidence}
+
+    # Mitigation stage: can this Case be auto-remediated? (matches a runbook AND
+    # clears the safety gate). The caller (poller) does the real D365 close when
+    # gate_passed is True; otherwise the note is suggest-only, as before.
+    advisory["mitigation"] = mitigation_assess(case, similar, confidence)
 
     # Clickable feedback links -> the orchestrator's /feedback endpoint records
     # the vote onto the case.

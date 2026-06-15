@@ -24,6 +24,27 @@ def case_text(case: dict) -> str:
     return f"Title: {title}\nDescription: {desc}".strip()
 
 
+# --- Display calibration -----------------------------------------------------
+# Raw cosine from the embedding model compresses "related" cases into a narrow
+# band (~0.40-0.78): even a near-identical case tops out ~0.78. Showing raw
+# cosine as a "match %" therefore reads misleadingly low (a strong match looks
+# like ~55%). We map that band to an intuitive 0-100% RELEVANCE for display only
+# -- the same idea as a search reranker's calibrated score. Ranking, ordering,
+# grounding, and the agents are all unchanged; this only affects the number a
+# human sees.
+REL_FLOOR = 0.40      # at/below this cosine -> 0% (effectively unrelated)
+REL_CEILING = 0.78    # at/above this cosine -> 100% (near-identical for this model)
+
+
+def relevance(cosine: float) -> float:
+    """Calibrated 0..1 relevance for DISPLAY (not used for ranking)."""
+    try:
+        x = (float(cosine) - REL_FLOOR) / (REL_CEILING - REL_FLOOR)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, x))
+
+
 def _cosine(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
@@ -61,4 +82,5 @@ def rank_similar(
     qv, rest = vectors[0], vectors[1:]
     scored = [(c, _cosine(qv, v)) for c, v in zip(pool, rest)]
     scored.sort(key=lambda t: t[1], reverse=True)
-    return [{**c, "score": round(s, 4)} for c, s in scored if s >= min_score][:top_k]
+    return [{**c, "score": round(s, 4), "display_score": round(relevance(s), 4)}
+            for c, s in scored if s >= min_score][:top_k]

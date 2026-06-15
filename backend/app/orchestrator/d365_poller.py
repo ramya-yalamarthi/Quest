@@ -49,13 +49,34 @@ def poll_once(
         if client.case_has_note(case.get("id"), NOTE_SUBJECT):
             continue                                   # already handled
         try:
-            _, note = proc(case, corpus)
+            advisory, note = proc(case, corpus)
             if post:
                 client.create_case_note(case.get("id"), NOTE_SUBJECT, note)
+                _auto_resolve(client, case, advisory)   # close it if the gate passed
             processed.append(case.get("ticket_number"))
         except Exception as exc:                       # one bad case must not stop the poll
             print(f"[poller] failed on {case.get('ticket_number')}: {exc}")
     return processed, new_since
+
+
+def _auto_resolve(client, case: dict, advisory: dict) -> None:
+    """If the mitigation gate passed, perform the one genuinely real action:
+    resolve + close the Case in Dynamics. Logged, and never fatal to the poll."""
+    mit = (advisory or {}).get("mitigation") or {}
+    if not mit.get("gate_passed"):
+        return
+    num = case.get("ticket_number")
+    try:
+        client.close_incident(
+            case.get("id"),
+            subject=f"Auto-resolved by AI agent ({mit.get('recipe_name')})",
+            text=mit.get("resolution_text", ""),
+        )
+        print(f"[mitigation] {num} matched {mit.get('recipe_key')} "
+              f"(conf {mit.get('confidence')}, match {mit.get('precedent_match')}) "
+              f"-- executed + RESOLVED+CLOSED")
+    except Exception as exc:
+        print(f"[mitigation] {num} close failed: {exc}")
 
 
 def _seed_since(client, scan: int = 50) -> str:

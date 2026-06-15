@@ -163,3 +163,24 @@ class DataverseClient:
             raw = r.read()
             out = json.loads(raw) if raw else {}
         return out.get("annotationid")
+
+    def close_incident(self, case_id: str, subject: str, text: str = "",
+                       status: int = 5) -> bool:
+        """Resolve + close a Case via the CloseIncident action (the genuinely
+        real auto-remediation action). Creates the incidentresolution activity
+        and flips the Case to Resolved (statecode 1). status 5 = 'Problem Solved'.
+
+        Returns True on success; raises on hard failure so the caller can log it.
+        Idempotent-ish: a Case that is already resolved will raise, which the
+        caller catches.
+        """
+        body = {
+            "IncidentResolution": {
+                "subject": subject,
+                "description": text,
+                "incidentid@odata.bind": f"/incidents({case_id})",
+            },
+            "Status": status,
+        }
+        self._request("POST", "CloseIncident", body)
+        return True

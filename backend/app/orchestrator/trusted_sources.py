@@ -23,10 +23,32 @@ TRUSTED_DOMAINS = {
     "support.servicenow.com": "ServiceNow Support KB",
     "stackoverflow.com": "Stack Overflow",
     "serverfault.com": "Server Fault",
+    "superuser.com": "Super User",
     "github.com": "GitHub",
     "reddit.com": "Reddit",
-    "cisco.com": "Cisco Support",
+    # networking
+    "cisco.com": "Cisco",
+    "juniper.net": "Juniper",
+    "ui.com": "Ubiquiti",
+    # databases
     "postgresql.org": "PostgreSQL Docs",
+    "mysql.com": "MySQL Docs",
+    "mariadb.com": "MariaDB Docs",
+    "mongodb.com": "MongoDB Docs",
+    "oracle.com": "Oracle Docs",
+    "redis.io": "Redis Docs",
+    # OS / platforms / vendors
+    "ubuntu.com": "Ubuntu",
+    "redhat.com": "Red Hat",
+    "vmware.com": "VMware Docs",
+    "apple.com": "Apple Support",
+    "dell.com": "Dell Support",
+    "hp.com": "HP Support",
+    "lenovo.com": "Lenovo Support",
+    "adobe.com": "Adobe Help",
+    "atlassian.com": "Atlassian Docs",
+    "google.com": "Google Help",
+    "mozilla.org": "MDN / Mozilla",
 }
 
 
