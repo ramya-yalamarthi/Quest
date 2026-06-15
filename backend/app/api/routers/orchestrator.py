@@ -218,6 +218,10 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
             client.create_case_note(case["id"], NOTE_SUBJECT, note)
         from app.orchestrator.d365_poller import _auto_resolve
         _auto_resolve(client, case, advisory)      # close it if the mitigation gate passed
+        try:
+            client.dedupe_case_notes(case["id"], NOTE_SUBJECT)  # backstop: collapse any race dup
+        except Exception:
+            pass
     except Exception:
         if ann_id:
             try:
@@ -277,6 +281,10 @@ def get_recommendation(case: str):
         }
         rows = (client._request("GET", "annotations?" + urllib.parse.urlencode(params)) or {}).get("value", [])
         if rows and rows[0].get("notetext"):
+            try:
+                client.dedupe_case_notes(case, "AI Support Recommendation")  # heal any race dup
+            except Exception:
+                pass
             return rows[0]["notetext"]                 # latest saved recommendation
         # none yet -> generate for DISPLAY ONLY. The webhook is the SINGLE writer of
         # timeline notes, so the pop-up never creates one -> it can't race the

@@ -207,6 +207,29 @@ class DataverseClient:
         """Delete a Note (e.g. roll back a placeholder if processing failed)."""
         self._request("DELETE", f"annotations({annotation_id})")
 
+    def dedupe_case_notes(self, case_id: str, subject: str) -> int:
+        """Self-healing backstop: keep only the OLDEST note with this subject on
+        the case and delete any extras. Deterministic (oldest createdon, then
+        smallest id), so concurrent callers all keep the same one. Returns the
+        number deleted. Never raises -- best effort."""
+        subj = subject.replace("'", "''")
+        params = urllib.parse.urlencode({
+            "$select": "annotationid",
+            "$filter": f"_objectid_value eq {case_id} and subject eq '{subj}'",
+            "$orderby": "createdon asc,annotationid asc",
+        })
+        try:
+            rows = (self._request("GET", "annotations?" + params) or {}).get("value", [])
+        except Exception:
+            return 0
+        deleted = 0
+        for r in rows[1:]:                             # keep rows[0] (oldest), drop the rest
+            try:
+                self.delete_note(r["annotationid"]); deleted += 1
+            except Exception:
+                pass
+        return deleted
+
     def close_incident(self, case_id: str, subject: str, text: str = "",
                        status: int = 5) -> bool:
         """Resolve + close a Case via the CloseIncident action (the genuinely
