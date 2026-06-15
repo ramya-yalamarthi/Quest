@@ -136,8 +136,14 @@ class DataverseClient:
                     "statecode,statuscode,createdon")
 
     def get_case(self, case_id: str) -> Optional[dict]:
-        """Fetch one Case by its GUID (for the event-driven webhook)."""
-        data = self._request("GET", f"incidents({case_id})?$select={self._CASE_SELECT}")
+        """Fetch one Case by its GUID (for the event-driven webhook). Returns
+        None if the id doesn't resolve (404/400) rather than raising."""
+        try:
+            data = self._request("GET", f"incidents({case_id})?$select={self._CASE_SELECT}")
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 404):
+                return None
+            raise
         return self._normalise_case(data) if data else None
 
     def get_case_by_number(self, ticket_number: str) -> Optional[dict]:
