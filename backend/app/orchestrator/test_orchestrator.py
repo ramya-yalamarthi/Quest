@@ -37,11 +37,12 @@ def _ctx(title="nCourt payments failing at checkout",
     return ctx
 
 
-def _llm_stub(cm=False, links=None, team="Payments"):
+def _llm_stub(cm=False, links=None, team="Payments", grounded=True):
     """One stub covering keys for all three agents (chat_json is patched globally)."""
     return {
         "recommended_team": team,
         "root_cause": "nCourt payment gateway integration is failing.",
+        "grounded": grounded,
         "hot_fix": {"summary": "Restart the payment gateway connector.",
                     "steps": ["Restart the connector", "Run a test payment"]},
         "ultimate_fix": {"summary": "Add retry + monitoring to the gateway integration.",
@@ -373,7 +374,7 @@ def test_d365_runner_full_pipeline_and_note():
     assert "Root cause:" in note
     assert "Hot fix" in note and "Ultimate fix" in note
     assert "Change Management" not in note                # CM flag removed
-    assert "Refs:" in note and "learn.microsoft.com/azure/quota" in note    # real clickable ref
+    assert "Refs:" in note and "learn.microsoft.com/x" in note    # agent's validated ref kept
     assert "CAS-1" in note and "% match" in note
     assert "resolved" in note                             # incident status (state=1)
     assert "<a href=" in note and "main.aspx" in note     # clickable incident link
@@ -407,6 +408,11 @@ class _FakeClient:
 
     def close_incident(self, case_id, subject, text="", status=5):
         self.resolved.append(case_id)
+        return True
+
+    def advance_bpf_to_resolve(self, case_id):
+        self.bpf_advanced = getattr(self, "bpf_advanced", [])
+        self.bpf_advanced.append(case_id)
         return True
 
 
@@ -448,6 +454,25 @@ def test_poller_is_idempotent_skips_noted():
     client = _FakeClient(cases, noted={"2"})        # already has an AI note
     processed, _ = poll_once(client, since="2026-06-11T09:30:00Z", process_fn=_fake_proc)
     assert processed == [] and client.posted == []
+
+
+# --- Evidence-grounding: ungrounded RCA caps confidence ---------------------
+def test_ungrounded_diagnosis_caps_confidence():
+    from app.orchestrator.d365_runner import process_case
+    case = {"id": "new", "ticket_number": "CAS-NEW", "title": "Coffee machine not heating",
+            "description": "coffee"}
+    corpus = [{"id": "b", "ticket_number": "CAS-1", "title": "Coffeemaker won't heat",
+               "description": "coffee", "state": 1}]
+    passthrough = lambda links, n=3: links
+    # strong precedent match, but the model marks the cause unconfirmed -> cap
+    with _patch_llm(_llm_stub(grounded=False)):
+        adv, _ = process_case(case, corpus, embed_fn=_fake_embed,
+                              ref_search_fn=lambda q, n=3: [], link_validate_fn=passthrough)
+    assert adv["confidence"] <= 0.6
+    with _patch_llm(_llm_stub(grounded=True)):
+        adv2, _ = process_case(case, corpus, embed_fn=_fake_embed,
+                               ref_search_fn=lambda q, n=3: [], link_validate_fn=passthrough)
+    assert adv2["confidence"] > 0.6                 # grounded -> not capped
 
 
 # --- Mitigation agent (auto-remediation) ------------------------------------

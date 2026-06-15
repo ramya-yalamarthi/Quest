@@ -66,6 +66,10 @@ def _auto_resolve(client, case: dict, advisory: dict) -> None:
     if not mit.get("gate_passed"):
         return
     num = case.get("ticket_number")
+    try:                                            # move the process bar to Resolve FIRST
+        client.advance_bpf_to_resolve(case.get("id"))   # (a resolved Case is read-only)
+    except Exception as exc:
+        print(f"[mitigation] {num} BPF advance skipped: {exc}")
     try:
         client.close_incident(
             case.get("id"),

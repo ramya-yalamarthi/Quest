@@ -89,8 +89,13 @@ class RoutingAgent:
 _DIAGNOSIS_SYSTEM = (
     "You are a support DIAGNOSIS assistant. Given a support case and a list of similar "
     "past cases, state the single most likely ROOT CAUSE in one crisp sentence, grounded "
-    "in the case and the similar cases. No extra reasoning, no ticket numbers. "
-    'Respond ONLY as JSON: {"root_cause": "<one sentence>"}.'
+    "ONLY in what the case and the cited similar cases actually say. Do NOT invent specifics "
+    "(software versions, file types, dates, error codes, components) that are not present in "
+    "the text. If the cause is not directly supported by the evidence, HEDGE: begin with "
+    "'Likely' and end with 'confirm via <a quick check> before any disruptive action'. Set "
+    '"grounded" false when the root cause relies on assumptions not stated in the case or the '
+    "similar cases; true only when it is directly supported. No ticket numbers. "
+    'Respond ONLY as JSON: {"root_cause": "<one sentence>", "grounded": true}.'
 )
 
 
@@ -105,7 +110,9 @@ class DiagnosisAgent:
             user += "\n\nSIMILAR PAST CASES:\n" + _format_similar(similar)
         result = chat_json(_DIAGNOSIS_SYSTEM, user)
         rc = str((result or {}).get("root_cause", "")).strip()
-        return {"root_cause": rc or "Root cause could not be determined automatically."}
+        grounded = bool((result or {}).get("grounded", True))
+        return {"root_cause": rc or "Root cause could not be determined automatically.",
+                "grounded": grounded}
 
 
 # ---------------------------------------------------------------------------
@@ -115,15 +122,20 @@ _RECOMMENDATION_SYSTEM = (
     "You are a support RESOLUTION assistant. Given a support case, its diagnosed root "
     "cause, and similar past cases, produce a concise resolution -- only what is actually "
     "needed, no filler.\n"
-    "- HOT FIX: the fastest action to restore service now.\n"
+    "- HOT FIX: the fastest action to restore service now. If the root cause is UNCONFIRMED, "
+    "make the FIRST step a quick confirmation, and flag any DISRUPTIVE action (rollback, "
+    "reinstall, reboot, data change) as 'only after confirming <X>'. NEVER recommend a "
+    "disruptive fix for an unconfirmed cause.\n"
     "- ULTIMATE FIX: the permanent fix; set requires_change_mgmt=true ONLY if it needs "
     "change control, with a short justification.\n"
-    "- REFERENCE LINKS: 1-3 PUBLIC links that match THIS specific problem. Pick the "
-    "OFFICIAL documentation for the exact technology in the case -- Microsoft Learn for "
-    "Microsoft products (Teams, Outlook, Windows, SQL Server, Azure), PostgreSQL.org for "
-    "PostgreSQL, Cisco for Cisco networking, the vendor's support site for hardware "
-    "(Dell/HP/Lenovo), Adobe for Adobe, etc. Use Stack Overflow/Server Fault only if no "
-    "official doc fits. Give real, specific, stable URLs (a real doc page, not a guess).\n"
+    "- REFERENCE LINKS: at most 2 PUBLIC links, each the OFFICIAL doc for the EXACT product, "
+    "platform and error in THIS case. Match the platform precisely (e.g. do NOT cite "
+    "Office-for-Mac docs for a Windows desktop issue) and the audience (end-user "
+    "troubleshooting, NOT developer/add-in/API docs unless the case is about development). "
+    "Microsoft Learn for Microsoft products, PostgreSQL.org for PostgreSQL, Cisco for Cisco "
+    "networking, the vendor's support site for hardware (Dell/HP/Lenovo), Adobe for Adobe. "
+    "Prefer ONE precise doc over several loose ones; OMIT a link rather than pad with a "
+    "loosely-related one. Real, specific, stable URLs only (a real doc page, not a guess).\n"
     "- Keep every summary to ONE short, crisp sentence -- main pointer only, no filler.\n"
     "- Give a rough eta for each fix (hot fix in minutes, ultimate fix in hours).\n"
     'Respond ONLY as JSON: {"hot_fix": {"summary": "...", "steps": ["..."], "eta": "~20 min"}, '

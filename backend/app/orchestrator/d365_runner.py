@@ -190,17 +190,18 @@ def process_case(
     # if we come up short do we backfill from a focused Microsoft Learn search.
     validate = link_validate_fn if link_validate_fn is not None else validate_links
     search = ref_search_fn if ref_search_fn is not None else search_refs
+    # Quality over quantity: keep at most 2 precise links; only backfill from a
+    # focused Microsoft Learn search if the agent gave us none (don't pad).
     try:
-        links = validate(recommendation.get("trusted_links") or [], 3)
+        links = validate(recommendation.get("trusted_links") or [], 2)
     except Exception:
         links = []
-    if len(links) < 3:
+    if not links:
         try:                                           # focused query = the title alone
-            extra = search(case.get("title", "").strip(), 3)
+            extra = search(case.get("title", "").strip(), 2)
         except Exception:
             extra = []
-        have = {l["url"] for l in links}
-        links += [e for e in (extra or []) if e.get("url") not in have][: 3 - len(links)]
+        links = (extra or [])[:2]
     recommendation["trusted_links"] = links
 
     # Meaningful confidence: blend the model's confidence with the strength of
@@ -208,6 +209,11 @@ def process_case(
     top_match = similar[0].get("display_score", similar[0]["score"]) if similar else None
     llm_conf = recommendation.get("confidence", 0.5)
     confidence = round((0.5 * llm_conf + 0.5 * top_match), 2) if top_match is not None else llm_conf
+    # Evidence-grounding gate: if the diagnosis isn't supported by the cited case
+    # (an assumed/hallucinated cause), cap confidence -- never show a confident
+    # number for an unconfirmed root cause.
+    if not diag.get("grounded", True):
+        confidence = round(min(confidence, 0.6), 2)
 
     advisory = {"routing": routing, "diagnosis": diagnosis,
                 "recommendation": recommendation, "confidence": confidence}
