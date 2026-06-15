@@ -58,9 +58,15 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 # ---------------------------------------------------------------------------
 _ROUTING_SYSTEM = (
     "You are a support TRIAGE assistant. Given a support case, decide the single most "
-    "appropriate support team/queue to handle it, based ONLY on the case content. Use a "
-    "concise, sensible team name for the issue (examples: Payments, E-Filing, "
-    "Forms & Documents, Integrations, Application Support, Infrastructure). "
+    "appropriate support team/queue to handle it, based ONLY on the case content. Prefer the "
+    "MOST SPECIFIC team over a broad bucket. Examples: "
+    "Database/DBA (data loss, queries, backups, Dataverse/SQL data), "
+    "Power Platform (Power Automate flows, Power Apps), "
+    "Identity & Access (lockouts, MFA, permissions), Network, "
+    "Security (phishing, malware), Payments, Application Support, "
+    "Infrastructure (servers, services, hardware). "
+    "Do NOT route a data or database issue to Infrastructure -- use Database/DBA or, for a "
+    "Power Automate / Power Apps problem, Power Platform. "
     'Respond ONLY as JSON: {"recommended_team": "<team>"}.'
 )
 
@@ -125,7 +131,11 @@ _RECOMMENDATION_SYSTEM = (
     "- HOT FIX: the fastest action to restore service now. If the root cause is UNCONFIRMED, "
     "make the FIRST step a quick confirmation, and flag any DISRUPTIVE action (rollback, "
     "reinstall, reboot, data change) as 'only after confirming <X>'. NEVER recommend a "
-    "disruptive fix for an unconfirmed cause.\n"
+    "disruptive fix for an unconfirmed cause. If the fix ITSELF could destroy data (e.g. an "
+    "in-place point-in-time restore that DISCARDS later writes), do NOT recommend it -- prefer "
+    "the NON-DESTRUCTIVE recovery: restore to a SIDE copy, extract ONLY the affected records, "
+    "and merge them back, stating the data-loss tradeoff explicitly. If a cited similar case "
+    "describes a safe recovery method, FOLLOW it.\n"
     "- ULTIMATE FIX: the permanent fix; set requires_change_mgmt=true ONLY if it needs "
     "change control, with a short justification.\n"
     "- REFERENCE LINKS: at most 2 links, each an OFFICIAL PRODUCT-DOCUMENTATION page for the "
