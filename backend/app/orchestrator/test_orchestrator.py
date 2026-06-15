@@ -580,6 +580,18 @@ def test_dedup_claim_blocks_concurrent_callers():
     release(cid)
 
 
+def test_dedup_claim_normalizes_guid_case():
+    from app.orchestrator.dedup import claim, release
+    lower = "65faa255-d6f2-4d64-aec6-77e60c90bc31"
+    upper = "{65FAA255-D6F2-4D64-AEC6-77E60C90BC31}"
+    release(lower)
+    assert claim(lower) is True            # webhook claims (Dataverse lowercase)
+    assert claim(upper) is False           # pop-up (UPPER + braces) -> same key -> blocked
+    release(upper)
+    assert claim(lower) is True            # released -> claimable again
+    release(lower)
+
+
 def _main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

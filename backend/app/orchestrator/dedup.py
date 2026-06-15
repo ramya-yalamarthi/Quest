@@ -19,9 +19,18 @@ _claims: dict[str, float] = {}
 _DEFAULT_TTL = 600.0          # remember a claim for 10 min (well past one run)
 
 
+def _norm(case_id: str) -> str:
+    """Normalise a Case GUID so the same case always maps to the same claim key.
+    The webhook gets Dataverse's LOWERCASE id; the pop-up gets the form's
+    UPPERCASE/braced id ({65FA...}). Without this they'd be different keys and
+    both would process the case -> duplicate note."""
+    return (case_id or "").strip().strip("{}").lower()
+
+
 def claim(case_id: str, ttl: float = _DEFAULT_TTL) -> bool:
     """Atomically claim a Case for processing. Returns True if THIS caller got
     the claim, False if it's already claimed (someone else is handling it)."""
+    case_id = _norm(case_id)
     if not case_id:
         return True
     now = time.monotonic()
@@ -36,6 +45,7 @@ def claim(case_id: str, ttl: float = _DEFAULT_TTL) -> bool:
 
 def release(case_id: str) -> None:
     """Release a claim so the Case can be retried (call on processing failure)."""
+    case_id = _norm(case_id)
     if not case_id:
         return
     with _lock:
