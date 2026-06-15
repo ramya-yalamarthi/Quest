@@ -54,6 +54,9 @@ def _maybe_start_poller() -> None:
     set. If they're not (or anything fails), the web API still runs normally --
     the poller is purely additive and never blocks startup."""
     try:
+        if os.getenv("POLLER_ENABLED", "true").strip().lower() in ("false", "0", "no", "off"):
+            print("[poller] disabled via POLLER_ENABLED -- running webhook-only.")
+            return
         from app.orchestrator.dataverse import DataverseClient, available
         if not available():
             print("[poller] Dataverse env not set; auto-poller disabled.")

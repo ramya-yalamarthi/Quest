@@ -196,12 +196,21 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
     if client.case_has_note(case["id"], NOTE_SUBJECT):
         return {"status": "already_processed", "ticket": case["ticket_number"]}
 
-    corpus = client.list_cases(top=100)
-    advisory, note = process_case(case, corpus, org_base=client.cfg["base"])
-    client.create_case_note(case["id"], NOTE_SUBJECT, note)
-
-    from app.orchestrator.d365_poller import _auto_resolve
-    _auto_resolve(client, case, advisory)          # close it if the mitigation gate passed
+    # De-dup: a slow (~20s) call makes Power Automate RETRY, and each retry would
+    # post another note. Claim the case so only the first caller processes it;
+    # concurrent retries return immediately.
+    from app.orchestrator.dedup import claim, release
+    if not claim(case["id"]):
+        return {"status": "already_processing", "ticket": case["ticket_number"]}
+    try:
+        corpus = client.list_cases(top=100)
+        advisory, note = process_case(case, corpus, org_base=client.cfg["base"])
+        client.create_case_note(case["id"], NOTE_SUBJECT, note)
+        from app.orchestrator.d365_poller import _auto_resolve
+        _auto_resolve(client, case, advisory)      # close it if the mitigation gate passed
+    except Exception:
+        release(case["id"])                        # allow a retry on hard failure
+        raise
 
     mit = advisory.get("mitigation") or {}
     return {"status": "processed", "ticket": case["ticket_number"],

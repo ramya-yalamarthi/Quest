@@ -568,6 +568,18 @@ def test_d365_webhook_rejects_bad_secret():
             os.environ["WEBHOOK_SECRET"] = old
 
 
+def test_dedup_claim_blocks_concurrent_callers():
+    from app.orchestrator.dedup import claim, release
+    cid = "case-dedup-test-123"
+    release(cid)                                   # clean slate
+    assert claim(cid) is True                      # first caller wins
+    assert claim(cid) is False                     # retry / poller blocked
+    assert claim(cid) is False
+    release(cid)                                   # on failure -> retryable
+    assert claim(cid) is True
+    release(cid)
+
+
 def _main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:
