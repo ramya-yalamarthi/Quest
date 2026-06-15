@@ -57,17 +57,16 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 # Routing Agent -- which team/queue should own this case?
 # ---------------------------------------------------------------------------
 _ROUTING_SYSTEM = (
-    "You are a support TRIAGE assistant. Given a support case, decide the single most "
-    "appropriate support team/queue to handle it, based ONLY on the case content. Prefer the "
-    "MOST SPECIFIC team over a broad bucket. Examples: "
-    "Database/DBA (data loss, queries, backups, Dataverse/SQL data), "
-    "Power Platform (Power Automate flows, Power Apps), "
-    "Identity & Access (lockouts, MFA, permissions), Network, "
-    "Security (phishing, malware), Payments, Application Support, "
-    "Infrastructure (servers, services, hardware). "
-    "Do NOT route a data or database issue to Infrastructure -- use Database/DBA or, for a "
-    "Power Automate / Power Apps problem, Power Platform. "
-    'Respond ONLY as JSON: {"recommended_team": "<team>"}.'
+    "You are a support TRIAGE assistant. Classify the case into EXACTLY ONE of these five "
+    "categories, based ONLY on the case content -- choose the single best fit:\n"
+    "- Software: applications, OS, Office/Outlook/Teams, licensing, updates, crashes, SaaS apps\n"
+    "- Hardware: laptops, desktops, peripherals, printers, monitors, docking, physical devices\n"
+    "- Network: connectivity, VPN, Wi-Fi, DNS, firewall, switches, ISP, routing, packet loss\n"
+    "- Database: SQL/Dataverse data, queries, backups, replication, data loss, deadlocks, jobs\n"
+    "- General: accounts/access, password/MFA/lockouts, onboarding/offboarding, email/DLs, "
+    "phishing, purchase/access requests, and anything not clearly in the four above\n"
+    "Use ONLY one of: Software, Hardware, Network, Database, General. "
+    'Respond ONLY as JSON: {"recommended_team": "Network"}.'
 )
 
 
@@ -77,7 +76,7 @@ class RoutingAgent:
     def run(self, context: dict) -> dict:
         title, desc, assigned = _ticket_fields(context)
         result = chat_json(_ROUTING_SYSTEM, f"Case title: {title}\nDescription: {desc}")
-        rec = str((result or {}).get("recommended_team", "")).strip() or "Application Support"
+        rec = str((result or {}).get("recommended_team", "")).strip() or "General"
         assigned_norm = (assigned or "").strip()
         correct = None
         if assigned_norm and assigned_norm.lower() not in ("unassigned", "unknown", ""):
