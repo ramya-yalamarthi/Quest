@@ -12,6 +12,7 @@ Network-free / testable: the caller does the D365 read/write via DataverseClient
 from __future__ import annotations
 
 import os
+import re
 from typing import Callable, Optional
 
 from app.orchestrator.agents import RoutingAgent, DiagnosisAgent, RecommendationAgent
@@ -32,6 +33,15 @@ def case_url(org_base: str, case_id: str) -> str:
     if not (org_base and case_id):
         return ""
     return f"{org_base.rstrip('/')}/main.aspx?pagetype=entityrecord&etn=incident&id={case_id}"
+
+
+def _ref_query(title: str, root_cause: str) -> str:
+    """Build the reference-search query from the descriptive root cause + title,
+    stripping ticket-id tokens (CASE-010, CAS-01124) so the Learn search can't
+    keyword-collide with unrelated docs (e.g. the SQL 'CASE' statement)."""
+    raw = f"{root_cause or ''} {title or ''}"
+    q = re.sub(r"\b(?:CASE|CAS)-?\d[\w-]*\b", " ", raw, flags=re.I)
+    return re.sub(r"\s+", " ", q).strip()
 
 
 def _pct(x) -> str:
@@ -197,8 +207,11 @@ def process_case(
     except Exception:
         links = []
     if not links:
-        try:                                           # focused query = the title alone
-            extra = search(case.get("title", "").strip(), 4)
+        # search on the descriptive root cause (not the raw title), with ticket-id
+        # tokens stripped -- avoids keyword collisions like "CASE-010" -> SQL CASE.
+        q = _ref_query(case.get("title", ""), diag.get("root_cause", ""))
+        try:
+            extra = search(q, 4) if len(q) >= 5 else []
         except Exception:
             extra = []
         links = [e for e in (extra or []) if is_official_doc(e.get("url", ""))][:2]

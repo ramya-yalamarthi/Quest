@@ -475,6 +475,14 @@ def test_ungrounded_diagnosis_caps_confidence():
     assert adv2["confidence"] > 0.6                 # grounded -> not capped
 
 
+def test_ref_query_strips_ticket_tokens():
+    from app.orchestrator.d365_runner import _ref_query
+    q = _ref_query("CASE-010", "FlexNet license server hang on port 27000")
+    assert "CASE-010" not in q and "CAS-" not in q.upper().replace("CASE", "")
+    assert "license server" in q.lower()              # descriptive root cause kept
+    assert len(_ref_query("CASE-010", "")) < 5        # junk-only -> too short, skip backfill
+
+
 def test_is_official_doc_filters_qa_and_forums():
     from app.orchestrator.web_refs import is_official_doc
     assert is_official_doc("https://learn.microsoft.com/en-us/sql/relational-databases/x")
