@@ -236,10 +236,15 @@ class DataverseClient:
         real auto-remediation action). Creates the incidentresolution activity
         and flips the Case to Resolved (statecode 1). status 5 = 'Problem Solved'.
 
-        Returns True on success; raises on hard failure so the caller can log it.
-        Idempotent-ish: a Case that is already resolved will raise, which the
-        caller catches.
+        Returns True on success, False if the Case is already resolved (so a
+        race can't create a second resolution). Raises on hard failure.
         """
+        try:                                           # skip if already resolved
+            cur = self._request("GET", f"incidents({case_id})?$select=statecode")
+            if cur and cur.get("statecode") == 1:
+                return False
+        except Exception:
+            pass
         body = {
             "IncidentResolution": {
                 "subject": subject,
