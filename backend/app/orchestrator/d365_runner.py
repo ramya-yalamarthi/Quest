@@ -88,25 +88,6 @@ def format_note(advisory: dict) -> str:
     links = rec.get("trusted_links") or []
     P = []
 
-    mit = advisory.get("mitigation") or {}
-    if mit.get("gate_passed"):
-        name = _esc(mit.get("recipe_name"))
-        P.append(f"<b>🤖 AUTO-REMEDIATION — {name}</b>")
-        P.append(f"✓ Matched the {name} runbook — 100% (signature confirmed)")
-        prec = mit.get("precedent_ticket")
-        prec_txt = (f" · precedent {_esc(prec)} ({_pct(mit.get('precedent_match'))})"
-                    if prec else "")
-        P.append(f"• Confidence: {_pct(mit.get('confidence'))} · "
-                 f"Tier {_esc(mit.get('tier'))} (reversible){prec_txt}")
-        P.append("• Actions executed:")
-        for line in mit.get("executed", []):
-            P.append(f"&nbsp;&nbsp;– {_esc(line)}")
-        P.append(f"• Verification: {_esc(mit.get('verify'))} ✓")
-        P.append("• Outcome: Case auto-resolved by the AI agent.")
-        P.append("<i>External actions simulated in this environment; the D365 "
-                 "resolve/close is live.</i>")
-        P.append("")
-
     P.append("<b>AI SUPPORT ANALYSIS</b>")
     P.append(f"Confidence: {_pct(advisory.get('confidence'))} "
              f"(based on {len(sims)} similar tickets and {len(links)} references)")
@@ -151,6 +132,25 @@ def format_note(advisory: dict) -> str:
             parts.append(f'<a href="{_href(u)}">{title}</a>' if u else title)
         P.append("• Refs: " + " · ".join(parts))
     P.append("")
+
+    mit = advisory.get("mitigation") or {}
+    if mit.get("gate_passed"):
+        name = _esc(mit.get("recipe_name"))
+        P.append(f"<b>🤖 AUTO-REMEDIATION — {name}</b>")
+        P.append(f"✓ Matched the {name} runbook — 100% (signature confirmed)")
+        prec = mit.get("precedent_ticket")
+        prec_txt = (f" · precedent {_esc(prec)} ({_pct(mit.get('precedent_match'))})"
+                    if prec else "")
+        P.append(f"• Confidence: {_pct(mit.get('confidence'))} · "
+                 f"Tier {_esc(mit.get('tier'))} (reversible){prec_txt}")
+        P.append("• Actions executed:")
+        for line in mit.get("executed", []):
+            P.append(f"&nbsp;&nbsp;– {_esc(line)}")
+        P.append(f"• Verification: {_esc(mit.get('verify'))} ✓")
+        P.append("• Outcome: Case auto-resolved by the AI agent.")
+        P.append("<i>External actions simulated in this environment; the D365 "
+                 "resolve/close is live.</i>")
+        P.append("")
 
     like = advisory.get("feedback_like_url")
     dislike = advisory.get("feedback_dislike_url")
