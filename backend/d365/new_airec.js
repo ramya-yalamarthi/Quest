@@ -22,13 +22,10 @@ function openRecommendation(primaryControl) {
 // Case form OnLoad: auto-open the pop-up as soon as the AI note is ready.
 // Polls every 4s for up to ~4 minutes, then pops the dialog ONCE per case per session.
 function onCaseFormLoad(executionContext) {
-    try { alert("AIREC: form-load script is running on this form"); } catch (e) {}   // TEMP TEST — remove later
     var formContext = executionContext.getFormContext();
     var id = formContext.data.entity.getId();
     if (!id) return;                                   // unsaved/new form -> nothing yet
     var caseId = id.replace(/[{}]/g, "");
-    var key = "airec_shown_" + caseId;
-    try { if (window.sessionStorage.getItem(key)) return; } catch (e) {}
 
     var attempts = 0;
     function check() {
@@ -39,12 +36,13 @@ function onCaseFormLoad(executionContext) {
             " and subject eq 'AI Support Recommendation'"
         ).then(function (res) {
             if (res.entities && res.entities.length) {
-                try { if (window.sessionStorage.getItem(key)) return; window.sessionStorage.setItem(key, "1"); } catch (e) {}
                 _openDialog(caseId);                   // note is ready -> pop it up
             } else if (attempts < 60) {
                 setTimeout(check, 4000);               // not ready yet -> check again in 4s
             }
         }).catch(function () { /* ignore transient errors */ });
     }
-    check();
+    // Defer the first check so the dialog opens AFTER the form finishes loading
+    // (D365 silently ignores navigateTo called during the OnLoad phase).
+    setTimeout(check, 2000);
 }
