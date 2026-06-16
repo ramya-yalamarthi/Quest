@@ -23,24 +23,32 @@ function openRecommendation(primaryControl) {
 // Polls every 4s for up to ~4 minutes, then pops the dialog ONCE per case per session.
 function onCaseFormLoad(executionContext) {
     var formContext = executionContext.getFormContext();
-    var id = formContext.data.entity.getId();
-    if (!id) return;                                   // unsaved/new form -> nothing yet
-    var caseId = id.replace(/[{}]/g, "");
 
     var attempts = 0;
     function check() {
         attempts++;
+        // Re-read the id every loop: on a NEW case it's empty until the user
+        // saves; once saved, getId() returns the id and we start looking for
+        // the AI note -- so no manual Refresh is needed after creating a case.
+        var id = formContext.data.entity.getId();
+        if (!id) {
+            if (attempts < 90) setTimeout(check, 4000);   // not saved yet -> wait
+            return;
+        }
+        var caseId = id.replace(/[{}]/g, "");
         Xrm.WebApi.retrieveMultipleRecords(
             "annotation",
             "?$select=annotationid&$top=1&$filter=_objectid_value eq " + caseId +
             " and subject eq 'AI Support Recommendation'"
         ).then(function (res) {
             if (res.entities && res.entities.length) {
-                _openDialog(caseId);                   // note is ready -> pop it up
-            } else if (attempts < 60) {
+                _openDialog(caseId);                   // note is ready -> pop it up (and stop)
+            } else if (attempts < 90) {
                 setTimeout(check, 4000);               // not ready yet -> check again in 4s
             }
-        }).catch(function () { /* ignore transient errors */ });
+        }).catch(function () {
+            if (attempts < 90) setTimeout(check, 4000);
+        });
     }
     // Defer the first check so the dialog opens AFTER the form finishes loading
     // (D365 silently ignores navigateTo called during the OnLoad phase).
