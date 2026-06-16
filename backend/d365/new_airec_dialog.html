@@ -7,9 +7,13 @@
   <style>
     body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f3f2f1; color: #201f1e; }
     .wrap { padding: 16px; }
+    .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; background: #0f3d6e; color: #fff;
+              display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; }
+    .head h2 { margin: 0; font-size: 16px; color: #0f3d6e; }
     .card { background: #fff; border: 1px solid #edebe9; border-radius: 8px; padding: 18px 20px;
             box-shadow: 0 2px 6px rgba(0,0,0,.08); line-height: 1.55; font-size: 14px; word-wrap: break-word; }
-    .card b { color: #0f3d6e; font-size: 13px; letter-spacing: .3px; }
+    .card b { color: #0f3d6e; }
     .card a { color: #0078d4; text-decoration: none; }
     .card a:hover { text-decoration: underline; }
     .spinner { display: flex; align-items: center; gap: 10px; color: #605e5c; padding: 24px; }
@@ -21,37 +25,62 @@
 </head>
 <body>
   <div class="wrap">
+    <div class="head"><div class="avatar">AI</div><h2>AI Recommendation</h2></div>
     <div id="content" class="card">
       <div class="spinner"><div class="dot"></div> Loading recommendation…</div>
     </div>
   </div>
 
   <script>
-    // Your deployed backend endpoint that returns the recommendation HTML for a case.
+    // Deployed backend endpoint that returns the recommendation as HTML.
     var BACKEND = "https://quest-z7e4.onrender.com/orchestrator/recommendation";
 
-    // D365 passes the navigateTo 'data' value in the 'data' query-string param.
     function getCaseId() {
       var p = new URLSearchParams(window.location.search);
       var d = p.get("data") || p.get("id") || "";
       return d.replace(/[{}]/g, "").trim();
     }
 
-    (function () {
+    // The backend returns REAL HTML, so we render it directly. If a future
+    // response is entity-encoded (starts with &lt;), decode it once first.
+    function render(html) {
       var el = document.getElementById("content");
-      var caseId = getCaseId();
-      if (!caseId) {
-        el.innerHTML = '<div class="err">No case id was passed to the dialog.</div>';
-        return;
+      if (html && /^\s*&lt;/.test(html)) {
+        var t = document.createElement("textarea");
+        t.innerHTML = html;
+        html = t.value;
       }
+      el.innerHTML = html || '<div class="err">No recommendation found for this case.</div>';
+    }
+
+    function showErr(msg) {
+      document.getElementById("content").innerHTML = '<div class="err">' + msg + '</div>';
+    }
+
+    // CSP-safe fallback: read the latest AI note straight from Dataverse.
+    function readNoteFromDataverse(caseId) {
+      try {
+        var xrm = (window.parent && window.parent.Xrm) ? window.parent.Xrm : (window.Xrm || null);
+        if (!xrm || !xrm.WebApi) { showErr("Could not load the recommendation."); return; }
+        xrm.WebApi.retrieveMultipleRecords(
+          "annotation",
+          "?$select=notetext&$top=1&$orderby=createdon desc" +
+          "&$filter=_objectid_value eq " + caseId +
+          " and subject eq 'AI Support Recommendation'"
+        ).then(function (res) {
+          if (res.entities && res.entities.length) render(res.entities[0].notetext);
+          else showErr("No recommendation found yet for this case.");
+        }, function () { showErr("Could not load the recommendation."); });
+      } catch (e) { showErr("Could not load the recommendation."); }
+    }
+
+    (function () {
+      var caseId = getCaseId();
+      if (!caseId) { showErr("No case id was passed to the dialog."); return; }
       fetch(BACKEND + "?case=" + encodeURIComponent(caseId))
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-        .then(function (html) { el.innerHTML = html; })
-        .catch(function (e) {
-          el.innerHTML = '<div class="err">Could not load the recommendation (' + e +
-            ').<br>If this persists it may be a D365 content-security policy blocking the external call — '
-            + 'switch to the Xrm.WebApi version (see new_airec.js comments).</div>';
-        });
+        .then(render)
+        .catch(function () { readNoteFromDataverse(caseId); });
     })();
   </script>
 </body>

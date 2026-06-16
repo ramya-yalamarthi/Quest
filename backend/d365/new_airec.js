@@ -2,7 +2,7 @@
 //  * openRecommendation(primaryControl)  -> wire to the "AI Recommendation" command-bar button.
 //  * onCaseFormLoad(executionContext)     -> register on the Case form OnLoad for the AUTO pop-up.
 
-var AIREC_DIALOG = "new_new_airec_dialog";   // <- EXACT HTML web resource Name (no .html)
+var AIREC_DIALOG = "new_new_airec_dialog";   // <- EXACT HTML web resource SCHEMA Name (the "Name" column, not the display name)
 
 function _openDialog(caseId) {
     return Xrm.Navigation.navigateTo(
@@ -20,32 +20,37 @@ function openRecommendation(primaryControl) {
 }
 
 // Case form OnLoad: auto-open the pop-up as soon as the AI note is ready.
-// Polls every 20s for up to ~3 minutes, then pops the dialog ONCE per case per session.
+// Polls every 4s for up to ~4 minutes, then pops the dialog ONCE per case per session.
 function onCaseFormLoad(executionContext) {
     var formContext = executionContext.getFormContext();
-    var id = formContext.data.entity.getId();
-    if (!id) return;                                   // unsaved/new form -> nothing yet
-    var caseId = id.replace(/[{}]/g, "");
-    var key = "airec_shown_" + caseId;
-    try { if (window.sessionStorage.getItem(key)) return; } catch (e) {}
 
-    // Poll quickly (every 4s, up to ~4 min) so the pop-up shows almost the
-    // instant the note is ready.
     var attempts = 0;
     function check() {
         attempts++;
+        // Re-read the id every loop: on a NEW case it's empty until the user
+        // saves; once saved, getId() returns the id and we start looking for
+        // the AI note -- so no manual Refresh is needed after creating a case.
+        var id = formContext.data.entity.getId();
+        if (!id) {
+            if (attempts < 90) setTimeout(check, 4000);   // not saved yet -> wait
+            return;
+        }
+        var caseId = id.replace(/[{}]/g, "");
         Xrm.WebApi.retrieveMultipleRecords(
             "annotation",
             "?$select=annotationid&$top=1&$filter=_objectid_value eq " + caseId +
             " and subject eq 'AI Support Recommendation'"
         ).then(function (res) {
             if (res.entities && res.entities.length) {
-                try { if (window.sessionStorage.getItem(key)) return; window.sessionStorage.setItem(key, "1"); } catch (e) {}
-                _openDialog(caseId);                   // note is ready -> pop it up
-            } else if (attempts < 60) {
+                _openDialog(caseId);                   // note is ready -> pop it up (and stop)
+            } else if (attempts < 90) {
                 setTimeout(check, 4000);               // not ready yet -> check again in 4s
             }
-        }).catch(function () { /* ignore transient errors */ });
+        }).catch(function () {
+            if (attempts < 90) setTimeout(check, 4000);
+        });
     }
-    check();
+    // Defer the first check so the dialog opens AFTER the form finishes loading
+    // (D365 silently ignores navigateTo called during the OnLoad phase).
+    setTimeout(check, 2000);
 }
