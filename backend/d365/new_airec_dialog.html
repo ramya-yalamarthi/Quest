@@ -51,6 +51,27 @@
         html = t.value;
       }
       el.innerHTML = html || '<div class="err">No recommendation found for this case.</div>';
+      wireLinks(el);
+    }
+
+    // D365 runs this dialog in a sandboxed iframe, so target="_blank" is blocked.
+    // Intercept link clicks and open them via D365's navigation API (real new tab),
+    // falling back to window.top.open.
+    function wireLinks(el) {
+      el.addEventListener("click", function (e) {
+        var a = e.target;
+        while (a && a.tagName !== "A") a = a.parentNode;
+        if (!a || !a.href) return;
+        e.preventDefault();
+        var url = a.href;
+        var xrm = (window.parent && window.parent.Xrm) ? window.parent.Xrm : (window.Xrm || null);
+        if (xrm && xrm.Navigation && xrm.Navigation.openUrl) {
+          xrm.Navigation.openUrl(url);
+        } else {
+          try { (window.top || window).open(url, "_blank", "noopener"); }
+          catch (_) { window.open(url, "_blank"); }
+        }
+      });
     }
 
     function showErr(msg) {

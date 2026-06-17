@@ -7,7 +7,7 @@ var AIREC_DIALOG = "new_new_airec_dialog";   // <- EXACT HTML web resource SCHEM
 function _openDialog(caseId) {
     return Xrm.Navigation.navigateTo(
         { pageType: "webresource", webresourceName: AIREC_DIALOG, data: caseId },
-        { target: 2, position: 1, width: 560, height: 640 }   // 2 = modal dialog, centered
+        { target: 2, position: 1, width: 560, height: 640, title: " " }   // 2 = modal dialog, centered; blank title (space) to hide the schema-name header
     );
 }
 
