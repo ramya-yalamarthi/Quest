@@ -48,32 +48,10 @@ app.add_middleware(
 
 app.include_router(orchestrator_router)
 
-
-def _maybe_start_poller() -> None:
-    """Auto-start the D365 poller in a background thread when its env vars are
-    set. If they're not (or anything fails), the web API still runs normally --
-    the poller is purely additive and never blocks startup."""
-    try:
-        if os.getenv("POLLER_ENABLED", "true").strip().lower() in ("false", "0", "no", "off"):
-            print("[poller] disabled via POLLER_ENABLED -- running webhook-only.")
-            return
-        from app.orchestrator.dataverse import DataverseClient, available
-        if not available():
-            print("[poller] Dataverse env not set; auto-poller disabled.")
-            return
-        import threading
-        from app.orchestrator.d365_poller import poll_loop
-        interval = int(os.getenv("POLL_INTERVAL_SECONDS", "120"))
-        threading.Thread(
-            target=poll_loop, args=(DataverseClient(),),
-            kwargs={"interval": interval}, daemon=True,
-        ).start()
-        print(f"[poller] auto-poller started (every {interval}s).")
-    except Exception as exc:  # never let the poller break the web service
-        print(f"[poller] could not start: {exc}")
-
-
-_maybe_start_poller()
+# Webhook-only: recommendations are created by the /orchestrator/d365-webhook
+# endpoint (called by the Power Automate flow on case create). The background
+# poller has been removed. (d365_poller.py is kept only for the _auto_resolve
+# helper the webhook reuses, and the optional manual scripts/d365_poll.py.)
 
 
 @app.get("/")
