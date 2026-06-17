@@ -370,7 +370,7 @@ def test_d365_runner_full_pipeline_and_note():
                                       link_validate_fn=passthrough)
     assert advisory.get("routing") and advisory.get("diagnosis") and advisory.get("recommendation")
     assert "<b>DIAGNOSIS</b>" in note and "<b>RECOMMENDATION</b>" in note   # bold (HTML) headings
-    assert "Assigned team:" in note and "Recommended team:" in note          # team fields
+    assert "Assigned team:" in note                          # team shown as the assignment
     assert "Root cause:" in note
     assert "Hot fix" in note and "Ultimate fix" in note
     assert "Change Management" not in note                # CM flag removed

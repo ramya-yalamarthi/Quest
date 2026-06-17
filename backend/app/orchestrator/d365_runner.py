@@ -95,16 +95,21 @@ def format_note(advisory: dict) -> str:
     P.append("")
 
     P.append(f"<b>TEAM ASSIGNMENT</b> &nbsp;·&nbsp; Confidence: {_pct(r.get('confidence'))}")
-    assigned = r.get("assigned_team") or "Unassigned"
+    assigned = (r.get("assigned_team") or "").strip()
     correct = r.get("assignment_correct")
-    P.append(f"• Assigned team: {_esc(assigned)}")
+    team = r.get("recommended_team")
     if correct is True:
-        P.append("• Assignment correct: Yes")
+        # already on the right team
+        P.append(f"• Assigned team: {_esc(assigned)}")
     elif correct is False:
-        P.append("• Assignment correct: No")
-        P.append(f"• Recommended team: {_esc(r.get('recommended_team'))}")
-    else:                                   # no team assigned yet -> just route it
-        P.append(f"• Recommended team: {_esc(r.get('recommended_team'))}")
+        # on the wrong team -> show current and the better one
+        P.append(f"• Currently assigned: {_esc(assigned)} (recommend reassigning)")
+        P.append(f"• Assigned team: {_esc(team)}")
+    else:
+        # not assigned yet -> the recommended team IS the assignment (no "Unassigned")
+        P.append(f"• Assigned team: {_esc(team)}")
+    if r.get("reason"):
+        P.append(f"• Why this team: {_esc(r.get('reason'))}")
     P.append("")
 
     P.append(f"<b>DIAGNOSIS</b> &nbsp;·&nbsp; Confidence: {_pct(d.get('confidence'))}")

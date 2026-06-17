@@ -78,8 +78,9 @@ _ROUTING_SYSTEM = (
     "- General: accounts/access, password/MFA/lockouts, onboarding/offboarding, email/DLs, "
     "phishing, purchase/access requests, and anything not clearly in the four above\n"
     "Use ONLY one of: Software, Hardware, Network, Database, General. "
-    "Also rate your confidence in the team from 0.0 to 1.0 (1.0 = certain). "
-    'Respond ONLY as JSON: {"recommended_team": "Network", "confidence": 0.0}.'
+    "Also rate your confidence in the team from 0.0 to 1.0 (1.0 = certain), and give a "
+    "ONE short sentence reason citing the specific signals in the case that point to that team. "
+    'Respond ONLY as JSON: {"recommended_team": "Network", "confidence": 0.0, "reason": "<one sentence>"}.'
 )
 
 
@@ -92,6 +93,7 @@ class RoutingAgent:
                            f"Case title: {title}\nDescription: {desc}" + _feedback_note(context))
         rec = str((result or {}).get("recommended_team", "")).strip() or "General"
         conf = _clamp(float((result or {}).get("confidence", 0.7) or 0.7), 0.0, 1.0)
+        reason = str((result or {}).get("reason", "")).strip()
         assigned_norm = (assigned or "").strip()
         correct = None
         if assigned_norm and assigned_norm.lower() not in ("unassigned", "unknown", ""):
@@ -101,6 +103,7 @@ class RoutingAgent:
             "assignment_correct": correct,            # True / False / None (no team yet)
             "recommended_team": rec,
             "confidence": conf,
+            "reason": reason,
         }
 
 
