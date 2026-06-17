@@ -1,0 +1,17 @@
+# Keep the image small + never ship secrets
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.env.*
+*.db
+*.log
+.git/
+frontend/
+node_modules/

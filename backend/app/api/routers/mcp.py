@@ -14,6 +14,10 @@ from app.auth.deps import get_current_user
 from app.auth.jwt import decode_token
 from app.mcp.server import MCPServer
 from app.schemas.resolution import ResolutionOut
+from app.schemas.feedback import FeedbackCreate, FeedbackOut
+from app.db.models.recommendation_feedback import RecommendationFeedback
+from app.orchestrator.audit import AuditLogger
+from app.orchestrator.db_sink import postgres_audit_sink
 
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
@@ -78,6 +82,7 @@ class LogResolutionRequest(BaseModel):
     confidence: Optional[float] = None
     reasoning: Optional[str] = None
     is_kb: bool = False
+    recommendedsteps: Optional[list[dict]] = None
 
 
 def build_analyze_response(result: dict) -> AnalyzeTicketResponse:
@@ -346,6 +351,62 @@ def log_resolution(
         reasoning=payload.reasoning,
         engineer_id=engineer_id,
         is_kb=payload.is_kb,
+        recommendedsteps=payload.recommendedsteps,
     )
-    
+
     return resolution
+
+
+@router.post("/feedback", response_model=FeedbackOut)
+def submit_feedback(
+    payload: FeedbackCreate,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    """Record an engineer like/dislike on a recommendation advisory.
+
+    Audits the vote (was_used=True for a 'like') alongside the agent's own
+    audit trail. Invalid verdict is rejected at the schema layer (422).
+    """
+    support_only(current)
+
+    created_by = None
+    try:
+        created_by = UUID(current["user_id"])
+    except (KeyError, ValueError, TypeError):
+        created_by = None
+
+    fb = RecommendationFeedback(
+        ticket_id=payload.ticket_id,
+        ai_event_id=payload.ai_event_id,
+        verdict=payload.verdict,
+        comment=payload.comment,
+        created_by=created_by,
+    )
+    db.add(fb)
+    db.commit()
+    db.refresh(fb)
+
+    AuditLogger(db_sink=postgres_audit_sink).log(
+        str(payload.ticket_id),
+        "recommendation",
+        note=f"engineer feedback: {payload.verdict}",
+        was_used=(payload.verdict == "like"),
+    )
+    return fb
+
+
+@router.get("/feedback/{ticket_id}", response_model=list[FeedbackOut])
+def list_feedback(
+    ticket_id: UUID,
+    db: Session = Depends(get_db),
+    current=Depends(get_current_user),
+):
+    """List all feedback recorded for a ticket's recommendation advisories."""
+    support_only(current)
+    return (
+        db.query(RecommendationFeedback)
+        .filter(RecommendationFeedback.ticket_id == ticket_id)
+        .order_by(RecommendationFeedback.created_at.desc())
+        .all()
+    )

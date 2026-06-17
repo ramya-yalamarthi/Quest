@@ -1,0 +1,279 @@
+"""
+Dynamics 365 / Dataverse client for the orchestrator (Approach #2).
+
+Reads Cases (the `incident` table) and writes the recommendation advisory back
+as a Note (annotation) on the Case. Pure stdlib (urllib) -- no new pip deps.
+
+Self-contained and OPTIONAL, mirroring llm.py: if the env vars aren't set,
+``available()`` is False and callers fall back gracefully (the pipeline keeps
+working on the 4 reference tickets, no D365 needed).
+
+Required env vars (set on Render, never in code/git):
+    DATAVERSE_URL        e.g. https://orgc409312b.crm.dynamics.com
+    AZURE_TENANT_ID
+    AZURE_CLIENT_ID
+    AZURE_CLIENT_SECRET
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Optional
+
+API_VERSION = "v9.2"
+
+# Phone to Case Process BPF (org-specific stage GUIDs) -- advance the process bar
+# to "Resolve" when the agent auto-resolves a Case, so the bar matches the
+# resolved status. Override via env if the org's process differs.
+BPF_RESOLVE_STAGE = os.getenv("BPF_RESOLVE_STAGE", "356ecd08-43c3-4585-ae94-6053984bc0a9")
+BPF_TRAVERSED_PATH = os.getenv(
+    "BPF_TRAVERSED_PATH",
+    "15322a8f-67b8-47fb-8763-13a28686c29d,"   # Identify
+    "92a6721b-d465-4d36-aef7-e8822d7a5a6a,"   # Research
+    "356ecd08-43c3-4585-ae94-6053984bc0a9",   # Resolve
+)
+
+
+def _env() -> Optional[dict]:
+    base = os.getenv("DATAVERSE_URL")
+    tenant = os.getenv("AZURE_TENANT_ID")
+    cid = os.getenv("AZURE_CLIENT_ID")
+    secret = os.getenv("AZURE_CLIENT_SECRET")
+    if not all([base, tenant, cid, secret]):
+        return None
+    return {"base": base.rstrip("/"), "tenant": tenant, "cid": cid, "secret": secret}
+
+
+def available() -> bool:
+    return _env() is not None
+
+
+class DataverseClient:
+    """Minimal Dataverse Web API client. Construct once and reuse (token cached).
+
+    All network methods raise on hard failure; callers in the orchestrator wrap
+    calls and fall back, so a D365 outage never breaks the pipeline.
+    """
+
+    def __init__(self, cfg: Optional[dict] = None, timeout: int = 30) -> None:
+        self.cfg = cfg or _env()
+        if self.cfg is None:
+            raise RuntimeError("Dataverse env vars not set (DATAVERSE_URL / AZURE_*).")
+        self.timeout = timeout
+        self._token: Optional[str] = None
+        self._token_exp: float = 0.0
+
+    # -- auth -------------------------------------------------------------
+    def _get_token(self) -> str:
+        # reuse the cached token until ~60s before expiry
+        if self._token and time.time() < self._token_exp - 60:
+            return self._token
+        url = f"https://login.microsoftonline.com/{self.cfg['tenant']}/oauth2/v2.0/token"
+        body = urllib.parse.urlencode({
+            "grant_type": "client_credentials",
+            "client_id": self.cfg["cid"],
+            "client_secret": self.cfg["secret"],
+            "scope": f"{self.cfg['base']}/.default",
+        }).encode()
+        req = urllib.request.Request(url, data=body, method="POST")
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            data = json.loads(r.read())
+        self._token = data["access_token"]
+        self._token_exp = time.time() + int(data.get("expires_in", 3600))
+        return self._token
+
+    # -- low-level request ------------------------------------------------
+    def _request(self, method: str, path: str, body: Optional[dict] = None) -> Optional[dict]:
+        url = f"{self.cfg['base']}/api/data/{API_VERSION}/{path.lstrip('/')}"
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header("Authorization", f"Bearer {self._get_token()}")
+        req.add_header("Accept", "application/json")
+        req.add_header("OData-MaxVersion", "4.0")
+        req.add_header("OData-Version", "4.0")
+        if body is not None:
+            req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else None
+
+    # -- cases ------------------------------------------------------------
+    def list_cases(self, top: int = 50, created_after: Optional[str] = None) -> list[dict]:
+        """Return recent Cases as normalised dicts (newest first).
+
+        created_after: ISO-8601 string; only cases created strictly after it.
+        """
+        params = {
+            "$select": "incidentid,ticketnumber,title,description,prioritycode,statecode,statuscode,createdon",
+            "$orderby": "createdon desc",
+            "$top": str(top),
+        }
+        if created_after:
+            params["$filter"] = f"createdon gt {created_after}"
+        path = "incidents?" + urllib.parse.urlencode(params)
+        data = self._request("GET", path) or {}
+        return [self._normalise_case(c) for c in data.get("value", [])]
+
+    @staticmethod
+    def _normalise_case(c: dict) -> dict:
+        return {
+            "id": c.get("incidentid"),
+            "ticket_number": c.get("ticketnumber"),
+            "title": c.get("title") or "",
+            "description": c.get("description") or "",
+            "priority": c.get("prioritycode"),
+            "status": c.get("statuscode"),
+            "state": c.get("statecode"),       # 0 active/open, 1 resolved, 2 cancelled
+            "created_on": c.get("createdon"),
+        }
+
+    _CASE_SELECT = ("incidentid,ticketnumber,title,description,prioritycode,"
+                    "statecode,statuscode,createdon")
+
+    def get_case(self, case_id: str) -> Optional[dict]:
+        """Fetch one Case by its GUID (for the event-driven webhook). Returns
+        None if the id doesn't resolve (404/400) rather than raising."""
+        try:
+            data = self._request("GET", f"incidents({case_id})?$select={self._CASE_SELECT}")
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 404):
+                return None
+            raise
+        return self._normalise_case(data) if data else None
+
+    def get_case_by_number(self, ticket_number: str) -> Optional[dict]:
+        """Fetch one Case by its ticket number (CAS-...)."""
+        num = ticket_number.replace("'", "''")
+        params = urllib.parse.urlencode({
+            "$select": self._CASE_SELECT, "$top": "1",
+            "$filter": f"ticketnumber eq '{num}'",
+        })
+        rows = (self._request("GET", "incidents?" + params) or {}).get("value", [])
+        return self._normalise_case(rows[0]) if rows else None
+
+    def case_has_note(self, case_id: str, subject: str) -> bool:
+        """True if the Case already has an annotation with this subject (so the
+        poller is idempotent and never double-posts).
+
+        NOTE: the query params MUST be URL-encoded (the filter contains spaces);
+        sending them raw makes Dataverse reject the request and this silently
+        return False -- which previously broke the poller's seeding."""
+        subj = subject.replace("'", "''")
+        params = {
+            "$select": "annotationid",
+            "$top": "1",
+            "$filter": f"_objectid_value eq {case_id} and subject eq '{subj}'",
+        }
+        path = "annotations?" + urllib.parse.urlencode(params)
+        try:
+            data = self._request("GET", path) or {}
+            return bool(data.get("value"))
+        except Exception:
+            return False
+
+    # -- write-back -------------------------------------------------------
+    def create_case_note(self, case_id: str, subject: str, text: str) -> Optional[str]:
+        """Write a Note (annotation) onto a Case. Returns the new annotation id."""
+        body = {
+            "subject": subject,
+            "notetext": text,
+            "objectid_incident@odata.bind": f"/incidents({case_id})",
+        }
+        # ask Dataverse to return the created row so we get its id
+        url = f"{self.cfg['base']}/api/data/{API_VERSION}/annotations"
+        data = json.dumps(body).encode()
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Authorization", f"Bearer {self._get_token()}")
+        req.add_header("Accept", "application/json")
+        req.add_header("OData-MaxVersion", "4.0")
+        req.add_header("OData-Version", "4.0")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Prefer", "return=representation")
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            raw = r.read()
+            out = json.loads(raw) if raw else {}
+        return out.get("annotationid")
+
+    def update_case_note(self, annotation_id: str, text: str) -> None:
+        """Replace a Note's text -- used to fill in a placeholder note."""
+        self._request("PATCH", f"annotations({annotation_id})", {"notetext": text})
+
+    def delete_note(self, annotation_id: str) -> None:
+        """Delete a Note (e.g. roll back a placeholder if processing failed)."""
+        self._request("DELETE", f"annotations({annotation_id})")
+
+    def dedupe_case_notes(self, case_id: str, subject: str) -> int:
+        """Self-healing backstop: keep only the OLDEST note with this subject on
+        the case and delete any extras. Deterministic (oldest createdon, then
+        smallest id), so concurrent callers all keep the same one. Returns the
+        number deleted. Never raises -- best effort."""
+        subj = subject.replace("'", "''")
+        params = urllib.parse.urlencode({
+            "$select": "annotationid",
+            "$filter": f"_objectid_value eq {case_id} and subject eq '{subj}'",
+            "$orderby": "createdon asc,annotationid asc",
+        })
+        try:
+            rows = (self._request("GET", "annotations?" + params) or {}).get("value", [])
+        except Exception:
+            return 0
+        deleted = 0
+        for r in rows[1:]:                             # keep rows[0] (oldest), drop the rest
+            try:
+                self.delete_note(r["annotationid"]); deleted += 1
+            except Exception:
+                pass
+        return deleted
+
+    def close_incident(self, case_id: str, subject: str, text: str = "",
+                       status: int = 5) -> bool:
+        """Resolve + close a Case via the CloseIncident action (the genuinely
+        real auto-remediation action). Creates the incidentresolution activity
+        and flips the Case to Resolved (statecode 1). status 5 = 'Problem Solved'.
+
+        Returns True on success, False if the Case is already resolved (so a
+        race can't create a second resolution). Raises on hard failure.
+        """
+        try:                                           # skip if already resolved
+            cur = self._request("GET", f"incidents({case_id})?$select=statecode")
+            if cur and cur.get("statecode") == 1:
+                return False
+        except Exception:
+            pass
+        body = {
+            "IncidentResolution": {
+                "subject": subject,
+                "description": text,
+                "incidentid@odata.bind": f"/incidents({case_id})",
+            },
+            "Status": status,
+        }
+        self._request("POST", "CloseIncident", body)
+        return True
+
+    def advance_bpf_to_resolve(self, case_id: str) -> bool:
+        """Advance the Phone-to-Case business process flow to its Resolve stage so
+        the process bar matches the auto-resolved status. Best-effort: returns
+        False if the Case has no BPF instance; raises only on hard HTTP failure
+        (caller logs). MUST be called BEFORE close_incident -- a resolved Case is
+        read-only."""
+        params = urllib.parse.urlencode({
+            "$select": "businessprocessflowinstanceid",
+            "$filter": f"_incidentid_value eq {case_id}",
+            "$top": "1",
+        })
+        data = self._request("GET", "phonetocaseprocesses?" + params) or {}
+        rows = data.get("value") or []
+        if not rows:
+            return False
+        inst = rows[0]["businessprocessflowinstanceid"]
+        self._request("PATCH", f"phonetocaseprocesses({inst})", {
+            "activestageid@odata.bind": f"/processstages({BPF_RESOLVE_STAGE})",
+            "traversedpath": BPF_TRAVERSED_PATH,
+        })
+        return True

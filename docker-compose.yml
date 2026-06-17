@@ -12,5 +12,16 @@ services:
       - pgvector_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
 
+  # Orchestrator (Day 4) state store + event dedupe + context cache.
+  # Set REDIS_URL=redis://localhost:6379/0 in backend/.env to activate it.
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
 volumes:
   pgvector_data:
+  redis_data:

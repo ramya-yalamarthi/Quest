@@ -30,3 +30,4 @@ sendgrid==6.11.0
 sentence-transformers==3.1.1
 ddgs>=0.3.0  # reliable web search (renamed from duckduckgo-search)
 requests>=2.31.0  # HTTP client for API calls
+redis>=5.0.0  # orchestrator state store + event dedupe + context cache (Day 4)

@@ -1,0 +1,330 @@
+"""
+Orchestrator API (WBS tasks O-07 webhook listener, O-09 accept/reject).
+
+Follows the same APIRouter pattern as the other routers.  Register in main.py:
+    from app.api.routers.orchestrator import router as orchestrator_router
+    app.include_router(orchestrator_router)
+
+The supervisor instance persists ticket state in Redis (or in-memory if
+REDIS_URL is unset) and writes its audit trail to Postgres ai_audit_log.
+"""
+
+from typing import Optional
+from uuid import UUID
+
+import os
+
+from fastapi import APIRouter, Header, HTTPException
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import text
+
+from app.orchestrator import Orchestrator, OrchestrationRecord
+from app.orchestrator.agents import default_agents
+from app.orchestrator.audit import AuditLogger
+from app.orchestrator.db_sink import postgres_audit_sink
+
+router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
+
+
+def _live_prior_resolution_fetcher(ticket_id: str) -> Optional[dict]:
+    """DB-backed fetcher for the Recommendation Agent (WBS R-03): the most recent
+    resolution for this ticket. Fully optional -- any failure (no DB, non-UUID
+    ticket id, no prior row) returns None so the pipeline degrades gracefully to
+    'no prior resolution on record'.
+    """
+    try:
+        tid = UUID(str(ticket_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    try:
+        from app.db.session import SessionLocal
+        from app.db.models.resolution import Resolution
+    except Exception:
+        return None
+    db = None
+    try:
+        db = SessionLocal()
+        row = (
+            db.query(Resolution)
+            .filter(Resolution.ticket_id == tid)
+            .order_by(Resolution.created_at.desc())
+            .first()
+        )
+        if row is None:
+            return None
+        return {
+            "resolution_text": row.resolution_text,
+            "root_cause": row.root_cause,
+            "recommendedsteps": row.recommendedsteps,
+        }
+    except Exception:
+        return None
+    finally:
+        if db is not None:
+            db.close()
+
+
+def _live_feedback_stats(root_cause_type: str) -> tuple:
+    """Feedback-aware confidence input for the Recommendation Agent: (likes,
+    dislikes) for advisories of this root-cause type. Joins feedback to its
+    audited recommendation via ai_event_id. Fully optional -- any failure (no DB,
+    missing tables, unlinked feedback) returns (0, 0) so confidence is unchanged.
+    """
+    try:
+        from app.db.session import SessionLocal
+    except Exception:
+        return (0, 0)
+    db = None
+    try:
+        db = SessionLocal()
+        row = db.execute(
+            text(
+                "SELECT "
+                "COUNT(*) FILTER (WHERE f.verdict = 'like')    AS likes, "
+                "COUNT(*) FILTER (WHERE f.verdict = 'dislike') AS dislikes "
+                "FROM recommendation_feedback f "
+                "JOIN ai_audit_log a ON a.ai_event_id = f.ai_event_id "
+                "WHERE a.output_json -> 'prevention' ->> 'root_cause_type' = :rct"
+            ),
+            {"rct": root_cause_type},
+        ).first()
+        if row is None:
+            return (0, 0)
+        return (int(row.likes or 0), int(row.dislikes or 0))
+    except Exception:
+        return (0, 0)
+    finally:
+        if db is not None:
+            db.close()
+
+
+# One supervisor for the app: state store is shared (Redis/in-memory),
+# audit goes to Postgres ai_audit_log via the existing SessionLocal pattern.
+_orchestrator = Orchestrator(
+    agents=default_agents(
+        prior_resolution_fetcher=_live_prior_resolution_fetcher,
+        feedback_stats=_live_feedback_stats,
+    ),
+    audit=AuditLogger(db_sink=postgres_audit_sink),
+)
+
+
+class WebhookEvent(BaseModel):
+    """Event ServiceNow/D365 sends when a ticket is created/transferred/reactivated.
+
+    Only ticket_id is required. event_type is inferred if omitted. Any extra
+    fields ServiceNow sends are accepted and forwarded to the agents as context.
+    """
+    model_config = ConfigDict(extra="allow")  # tolerate any extra ServiceNow fields
+
+    ticket_id: str = Field(..., description="ServiceNow sys_id or ticket number")
+    event_id: Optional[str] = Field(None, description="Unique id of THIS delivery; used for dedupe")
+    event_type: Optional[str] = Field(None, description="create | transfer | reactivate (inferred if omitted)")
+    priority: Optional[str] = Field(None, description="e.g. P1..P3")
+    assigned_team: Optional[str] = Field(None, description="Currently assigned team")
+    previous_team: Optional[str] = Field(None, description="Prior team (signals a transfer)")
+    reactivation_count: Optional[int] = Field(None, description="Times reopened (>0 signals reactivation)")
+    title: Optional[str] = Field(None, description="Ticket short description / title")
+    description: Optional[str] = Field(None, description="Ticket full description")
+    severity: Optional[str] = Field(None, description="Severity / impact")
+    status: Optional[str] = Field(None, description="Ticket status")
+
+
+class Decision(BaseModel):
+    ticket_id: str = Field(..., description="The ticket the engineer is responding to")
+    decision: str = Field(..., description="accept | reject")
+
+
+def _summary(record: Optional[OrchestrationRecord]) -> dict:
+    if record is None:
+        return {"status": "ignored", "detail": "duplicate or unknown event"}
+    return {
+        "ticket_id": record.ticket_id,
+        "event_type": record.event_type,
+        "pipeline": record.pipeline,
+        "current_agent": record.current_agent,
+        "state": record.state,
+        "advisories": record.advisories,
+        "status_detail": record.status_detail,
+    }
+
+
+@router.post("/webhook")
+def ingest_event(evt: WebhookEvent):
+    """O-07: receive an ICM event and run the first agent in the pipeline."""
+    record = _orchestrator.handle_event(evt.model_dump(exclude_none=True))
+    return _summary(record)
+
+
+class D365CaseEvent(BaseModel):
+    """Payload the Power Automate flow (or a Dataverse webhook) POSTs when a new
+    Case is created. Send the Case GUID as `id` (or `incidentid`), or the
+    `ticketnumber`. Extra fields are tolerated."""
+    model_config = ConfigDict(extra="allow")
+
+    id: Optional[str] = None
+    incidentid: Optional[str] = None
+    ticketnumber: Optional[str] = None
+
+
+@router.post("/d365-webhook")
+def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(default=None)):
+    """Event-driven entry point: a new D365 Case fires this (via Power Automate),
+    so the AI note appears in SECONDS instead of waiting for the ~2-min poller.
+    Runs the SAME pipeline + auto-remediation as the poller, and is idempotent
+    (skips a Case that already has the AI note).
+
+    Auth: if the WEBHOOK_SECRET env var is set, the caller MUST send the same
+    value in the `X-Webhook-Secret` header."""
+    secret = os.getenv("WEBHOOK_SECRET")
+    if secret and x_webhook_secret != secret:
+        raise HTTPException(status_code=401, detail="invalid webhook secret")
+
+    from app.orchestrator.dataverse import DataverseClient, available
+    if not available():
+        raise HTTPException(status_code=503, detail="Dataverse not configured")
+    client = DataverseClient()
+
+    cid = (evt.id or evt.incidentid or "").strip()
+    num = (evt.ticketnumber or "").strip()
+    case = client.get_case(cid) if cid else (client.get_case_by_number(num) if num else None)
+    if not case:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    from app.orchestrator.d365_runner import process_case, NOTE_SUBJECT
+    if client.case_has_note(case["id"], NOTE_SUBJECT):
+        return {"status": "already_processed", "ticket": case["ticket_number"]}
+
+    # De-dup: a slow (~20s) call makes Power Automate RETRY. The in-memory claim
+    # blocks same-instance retries; the PERSISTENT placeholder note below blocks
+    # retries on OTHER instances (Render may run more than one).
+    from app.orchestrator.dedup import claim, release
+    if not claim(case["id"]):
+        return {"status": "already_processing", "ticket": case["ticket_number"]}
+    # Drop a placeholder note immediately -> any concurrent retry now sees
+    # case_has_note == True and returns 'already_processed' before posting.
+    try:
+        ann_id = client.create_case_note(
+            case["id"], NOTE_SUBJECT, "<i>\U0001f916 AI analysis in progress…</i>")
+    except Exception:
+        ann_id = None
+    try:
+        corpus = client.list_cases(top=100)
+        advisory, note = process_case(case, corpus, org_base=client.cfg["base"])
+        if ann_id:
+            client.update_case_note(ann_id, note)  # fill in the placeholder
+        else:
+            client.create_case_note(case["id"], NOTE_SUBJECT, note)
+        from app.orchestrator.d365_poller import _auto_resolve
+        _auto_resolve(client, case, advisory)      # close it if the mitigation gate passed
+        try:
+            client.dedupe_case_notes(case["id"], NOTE_SUBJECT)  # backstop: collapse any race dup
+        except Exception:
+            pass
+    except Exception:
+        if ann_id:
+            try:
+                client.delete_note(ann_id)         # roll back the placeholder
+            except Exception:
+                pass
+        release(case["id"])                        # allow a retry on hard failure
+        raise
+
+    mit = advisory.get("mitigation") or {}
+    return {"status": "processed", "ticket": case["ticket_number"],
+            "auto_resolved": bool(mit.get("gate_passed"))}
+
+
+@router.post("/decision")
+def submit_decision(d: Decision):
+    """O-09: engineer ACCEPT -> next agent; REJECT -> block + flag retraining."""
+    try:
+        record = _orchestrator.handle_decision(d.ticket_id, d.decision)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no orchestration state for ticket")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _summary(record)
+
+
+@router.get("/state/{ticket_id}")
+def get_state(ticket_id: str):
+    """Inspect where a ticket currently sits in the pipeline."""
+    record = _orchestrator.get_state(ticket_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="no orchestration state for ticket")
+    return _summary(record)
+
+
+@router.get("/health")
+def health():
+    """Liveness check for your teammate / ServiceNow connectivity test."""
+    return {"status": "ok", "service": "orchestrator"}
+
+
+@router.get("/recommendation", response_class=HTMLResponse)
+def get_recommendation(case: str):
+    """Return the AI recommendation for a Case as HTML (for the D365 pop-up
+    dialog). Serves the latest saved note; if none exists yet, generates one,
+    saves it, and returns it. CORS is open (see orchestrator_server.py)."""
+    try:
+        from app.orchestrator.dataverse import DataverseClient, available
+        if not available():
+            return "<p style='font-family:Segoe UI,Arial'>Service not configured.</p>"
+        import urllib.parse
+        client = DataverseClient()
+        case = case.replace("{", "").replace("}", "").strip()
+        params = {
+            "$select": "notetext,createdon", "$top": "1", "$orderby": "createdon desc",
+            "$filter": f"_objectid_value eq {case} and subject eq 'AI Support Recommendation'",
+        }
+        rows = (client._request("GET", "annotations?" + urllib.parse.urlencode(params)) or {}).get("value", [])
+        if rows and rows[0].get("notetext"):
+            try:
+                client.dedupe_case_notes(case, "AI Support Recommendation")  # heal any race dup
+            except Exception:
+                pass
+            return rows[0]["notetext"]                 # latest saved recommendation
+        # none yet -> generate for DISPLAY ONLY. The webhook is the SINGLE writer of
+        # timeline notes, so the pop-up never creates one -> it can't race the
+        # webhook into a duplicate note.
+        from app.orchestrator.d365_runner import process_case
+        corpus = client.list_cases(top=100)
+        target = next((cc for cc in corpus if cc.get("id") == case), None)
+        if not target:
+            return "<p style='font-family:Segoe UI,Arial'>No recommendation found for this case.</p>"
+        _, note = process_case(target, corpus, org_base=client.cfg["base"])
+        return note
+    except Exception as exc:
+        return f"<p style='font-family:Segoe UI,Arial'>Could not load recommendation: {exc}</p>"
+
+
+@router.get("/feedback", response_class=HTMLResponse)
+def record_feedback(case: str, v: str = "like"):
+    """Clickable 👍/👎 from the Case note land here. Records the vote as a
+    feedback note on the Case and shows a small thank-you page.
+
+    (Open GET on purpose so a plain link works; POC-grade -- add a signed token
+    if you want to prevent casual re-voting.)"""
+    verdict = "like" if str(v).lower() == "like" else "dislike"
+    label = "\U0001f44d Helpful" if verdict == "like" else "\U0001f44e Not helpful"
+    posted = False
+    try:
+        from app.orchestrator.dataverse import DataverseClient, available
+        if available():
+            DataverseClient().create_case_note(
+                case, "AI Recommendation Feedback",
+                f"Engineer rated the AI recommendation: {label}")
+            posted = True
+    except Exception:
+        posted = False
+    sub = "Recorded on the case — you can close this tab." if posted else "Thanks!"
+    emoji = label.split(" ", 1)[0]
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'><title>Feedback</title></head>"
+        "<body style='font-family:Segoe UI,Arial,sans-serif;text-align:center;padding:48px;color:#222'>"
+        f"<div style='font-size:46px'>{emoji}</div>"
+        "<h2>Thanks for your feedback!</h2>"
+        f"<p style='color:#666'>{sub}</p></body></html>"
+    )
