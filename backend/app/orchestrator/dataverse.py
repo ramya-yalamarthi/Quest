@@ -103,18 +103,27 @@ class DataverseClient:
             return json.loads(raw) if raw else None
 
     # -- cases ------------------------------------------------------------
-    def list_cases(self, top: int = 50, created_after: Optional[str] = None) -> list[dict]:
+    def list_cases(self, top: int = 50, created_after: Optional[str] = None,
+                   resolved_only: bool = False) -> list[dict]:
         """Return recent Cases as normalised dicts (newest first).
 
         created_after: ISO-8601 string; only cases created strictly after it.
+        resolved_only: when True, return only resolved Cases (statecode 1) --
+            used to build the similarity corpus, since only closed cases have a
+            proven resolution worth learning from.
         """
         params = {
             "$select": "incidentid,ticketnumber,title,description,prioritycode,statecode,statuscode,createdon",
             "$orderby": "createdon desc",
             "$top": str(top),
         }
+        filters = []
         if created_after:
-            params["$filter"] = f"createdon gt {created_after}"
+            filters.append(f"createdon gt {created_after}")
+        if resolved_only:
+            filters.append("statecode eq 1")
+        if filters:
+            params["$filter"] = " and ".join(filters)
         path = "incidents?" + urllib.parse.urlencode(params)
         data = self._request("GET", path) or {}
         return [self._normalise_case(c) for c in data.get("value", [])]

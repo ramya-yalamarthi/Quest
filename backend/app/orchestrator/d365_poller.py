@@ -37,7 +37,9 @@ def poll_once(
     cases = client.list_cases(top=corpus_top)
     if not cases:
         return [], since
-    corpus = cases
+    # Similarity corpus = RESOLVED cases only (the processing list above stays
+    # all-recent so new/open cases still get a recommendation posted).
+    corpus = client.list_cases(top=corpus_top, resolved_only=True)
     new_since = cases[0].get("created_on") or since
     proc = process_fn or (lambda case, corp: process_case(case, corp, org_base=client.cfg["base"]))
 

@@ -210,7 +210,7 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
     except Exception:
         ann_id = None
     try:
-        corpus = client.list_cases(top=100)
+        corpus = client.list_cases(top=100, resolved_only=True)   # learn from closed cases only
         advisory, note = process_case(case, corpus, org_base=client.cfg["base"])
         if ann_id:
             client.update_case_note(ann_id, note)  # fill in the placeholder
@@ -290,10 +290,10 @@ def get_recommendation(case: str):
         # timeline notes, so the pop-up never creates one -> it can't race the
         # webhook into a duplicate note.
         from app.orchestrator.d365_runner import process_case
-        corpus = client.list_cases(top=100)
-        target = next((cc for cc in corpus if cc.get("id") == case), None)
+        target = client.get_case(case)                            # the (open) case being viewed
         if not target:
             return "<p style='font-family:Segoe UI,Arial'>No recommendation found for this case.</p>"
+        corpus = client.list_cases(top=100, resolved_only=True)   # learn from closed cases only
         _, note = process_case(target, corpus, org_base=client.cfg["base"])
         return note
     except Exception as exc:

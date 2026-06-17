@@ -180,7 +180,12 @@ def process_case(
     diagnosis_agent = agents.get("diagnosis") or DiagnosisAgent()
     rec_agent = agents.get("recommendation") or RecommendationAgent()
 
-    similar = rank_similar(case, corpus, top_k=top_k, min_score=min_score, embed_fn=embed_fn)
+    # Only learn from CLOSED/resolved cases (statecode 1). Open (0) and
+    # cancelled (2) tickets have no proven resolution, so they must NOT be used
+    # as similar-incident matches. Cases with no state set (unit-test fixtures)
+    # are kept so tests still exercise the ranking.
+    closed_corpus = [c for c in (corpus or []) if c.get("state") not in (0, 2)]
+    similar = rank_similar(case, closed_corpus, top_k=top_k, min_score=min_score, embed_fn=embed_fn)
     for s in similar:                                  # add clickable D365 links
         s["url"] = case_url(org_base, s.get("id"))
     context = _context(case, similar)                  # agents ground on ALL matches
