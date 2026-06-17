@@ -301,9 +301,11 @@ def get_recommendation(case: str):
 
 
 @router.get("/feedback", response_class=HTMLResponse)
-def record_feedback(case: str, v: str = "like"):
-    """Clickable 👍/👎 from the Case note land here. Records the vote as a
-    feedback note on the Case and shows a small thank-you page.
+def record_feedback(case: str, v: str = "like", comment: str = ""):
+    """Clickable 👍/👎 from the Case note land here. Records the vote (and an
+    optional free-text comment) as a feedback note on the Case and shows a small
+    thank-you page. The in-dialog popup calls this and shows its own inline
+    confirmation, so the returned HTML is only seen on direct link access.
 
     (Open GET on purpose so a plain link works; POC-grade -- add a signed token
     if you want to prevent casual re-voting.)"""
@@ -313,9 +315,11 @@ def record_feedback(case: str, v: str = "like"):
     try:
         from app.orchestrator.dataverse import DataverseClient, available
         if available():
+            text = f"Engineer rated the AI recommendation: {label}"
+            if (comment or "").strip():
+                text += f"\nComment: {comment.strip()}"
             DataverseClient().create_case_note(
-                case, "AI Recommendation Feedback",
-                f"Engineer rated the AI recommendation: {label}")
+                case, "AI Recommendation Feedback", text)
             posted = True
     except Exception:
         posted = False

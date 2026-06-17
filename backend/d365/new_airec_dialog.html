@@ -54,15 +54,21 @@
       wireLinks(el);
     }
 
-    // D365 runs this dialog in a sandboxed iframe, so target="_blank" is blocked.
-    // Intercept link clicks and open them via D365's navigation API (real new tab),
-    // falling back to window.top.open.
+    var fbDone = false;   // feedback already submitted for this open
+
+    // Intercept link clicks: feedback 👍/👎 are handled INLINE (no navigation);
+    // every other link opens in a new tab (target="_blank" is blocked in the
+    // sandboxed web-resource iframe, so use D365's navigation API).
     function wireLinks(el) {
       el.addEventListener("click", function (e) {
         var a = e.target;
         while (a && a.tagName !== "A") a = a.parentNode;
         if (!a || !a.href) return;
         e.preventDefault();
+        if (a.href.indexOf("/orchestrator/feedback") !== -1) {
+          onFeedbackClick(a);
+          return;
+        }
         var url = a.href;
         var xrm = (window.parent && window.parent.Xrm) ? window.parent.Xrm : (window.Xrm || null);
         if (xrm && xrm.Navigation && xrm.Navigation.openUrl) {
@@ -72,6 +78,59 @@
           catch (_) { window.open(url, "_blank"); }
         }
       });
+    }
+
+    function fbPanel() {
+      var p = document.getElementById("fb-panel");
+      if (!p) {
+        p = document.createElement("div");
+        p.id = "fb-panel";
+        p.style.marginTop = "10px";
+        document.getElementById("content").appendChild(p);
+      }
+      return p;
+    }
+
+    function onFeedbackClick(a) {
+      if (fbDone) return;
+      var url = a.href;
+      if (/[?&]v=like(\b|&|$)/.test(url)) {           // 👍 -> submit straight away
+        submitFeedback(url, "");
+        return;
+      }
+      // 👎 -> reveal a comment box + Send right below the buttons
+      var p = fbPanel();
+      p.innerHTML =
+        '<div style="font-size:13px;color:#605e5c;margin-bottom:4px">Tell us what went wrong (optional):</div>' +
+        '<textarea id="fb-comment" style="width:100%;box-sizing:border-box;min-height:64px;' +
+        'border:1px solid #c8c6c4;border-radius:6px;padding:8px;font-family:inherit;font-size:13px"></textarea>' +
+        '<div style="margin-top:6px"><button id="fb-send" style="background:#0078d4;color:#fff;' +
+        'border:none;border-radius:4px;padding:6px 18px;cursor:pointer;font-size:13px">Send</button></div>';
+      var ta = document.getElementById("fb-comment");
+      if (ta) ta.focus();
+      document.getElementById("fb-send").addEventListener("click", function () {
+        submitFeedback(url, (document.getElementById("fb-comment").value || "").trim());
+      });
+    }
+
+    function submitFeedback(url, comment) {
+      fbDone = true;
+      try { fetch(url + "&comment=" + encodeURIComponent(comment)).catch(function () {}); } catch (e) {}
+      // Hide the 👍/👎 buttons and the "helpful?" question so we don't repeat
+      // the same block before and after.
+      var el = document.getElementById("content");
+      var links = el.getElementsByTagName("a");
+      for (var i = 0; i < links.length; i++) {
+        if (links[i].href.indexOf("/orchestrator/feedback") !== -1) links[i].style.display = "none";
+      }
+      try {
+        var w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false), n;
+        while ((n = w.nextNode())) {
+          if (n.nodeValue && n.nodeValue.toLowerCase().indexOf("helpful") !== -1) n.nodeValue = "";
+        }
+      } catch (e) {}
+      fbPanel().innerHTML =
+        '<div style="color:#107c10;font-size:13px">✓ Thanks for your feedback! Recorded on the case.</div>';
     }
 
     function showErr(msg) {
