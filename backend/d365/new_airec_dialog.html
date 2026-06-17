@@ -165,14 +165,36 @@
       } catch (e) { showErr("Could not load the recommendation."); }
     }
 
+    // While the case is still being analysed, the backend note is just a
+    // placeholder ("AI analysis in progress…"). Detect that and keep polling so
+    // the finished answer appears on its own -- no manual Refresh needed.
+    function isInProgress(html) { return /analysis in progress/i.test(html || ""); }
+
+    function showAnalyzing() {
+      document.getElementById("content").innerHTML =
+        '<div class="spinner"><div class="dot"></div> Analyzing the case…</div>';
+    }
+
+    function loadRecommendation(caseId, attempt) {
+      attempt = attempt || 0;
+      fetch(BACKEND + "?case=" + encodeURIComponent(caseId))
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(function (html) {
+          if (isInProgress(html) && attempt < 40) {     // not ready -> wait and retry (~2 min)
+            showAnalyzing();
+            setTimeout(function () { loadRecommendation(caseId, attempt + 1); }, 3000);
+          } else {
+            render(html);
+          }
+        })
+        .catch(function () { readNoteFromDataverse(caseId); });
+    }
+
     (function () {
       var caseId = getCaseId();
       if (!caseId) { showErr("No case id was passed to the dialog."); return; }
       wireLinks(document.getElementById("content"));   // delegated: attach ONCE, survives re-renders
-      fetch(BACKEND + "?case=" + encodeURIComponent(caseId))
-        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-        .then(render)
-        .catch(function () { readNoteFromDataverse(caseId); });
+      loadRecommendation(caseId);
     })();
   </script>
 </body>
