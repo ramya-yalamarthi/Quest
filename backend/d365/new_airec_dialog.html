@@ -34,6 +34,7 @@
   <script>
     // Deployed backend endpoint that returns the recommendation as HTML.
     var BACKEND = "https://quest-z7e4.onrender.com/orchestrator/recommendation";
+    var REFINE  = "https://quest-z7e4.onrender.com/orchestrator/refine";
 
     function getCaseId() {
       var p = new URLSearchParams(window.location.search);
@@ -51,7 +52,6 @@
         html = t.value;
       }
       el.innerHTML = html || '<div class="err">No recommendation found for this case.</div>';
-      wireLinks(el);
     }
 
     var fbDone = false;   // feedback already submitted for this open
@@ -115,22 +115,33 @@
 
     function submitFeedback(url, comment) {
       fbDone = true;
+      // Record the 👍/👎 (and comment) on the case, fire-and-forget.
       try { fetch(url + "&comment=" + encodeURIComponent(comment)).catch(function () {}); } catch (e) {}
-      // Hide the 👍/👎 buttons and the "helpful?" question so we don't repeat
-      // the same block before and after.
-      var el = document.getElementById("content");
-      var links = el.getElementsByTagName("a");
-      for (var i = 0; i < links.length; i++) {
-        if (links[i].href.indexOf("/orchestrator/feedback") !== -1) links[i].style.display = "none";
+
+      // 👍 with no comment -> just confirm. Otherwise regenerate a better answer.
+      var isLike = /[?&]v=like(\b|&|$)/.test(url);
+      if (isLike && !comment) {
+        fbPanel().innerHTML =
+          '<div style="color:#107c10;font-size:13px">✓ Thanks for your feedback!</div>';
+        return;
       }
-      try {
-        var w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false), n;
-        while ((n = w.nextNode())) {
-          if (n.nodeValue && n.nodeValue.toLowerCase().indexOf("helpful") !== -1) n.nodeValue = "";
-        }
-      } catch (e) {}
-      fbPanel().innerHTML =
-        '<div style="color:#107c10;font-size:13px">✓ Thanks for your feedback! Recorded on the case.</div>';
+
+      // Regenerate the recommendation using the engineer's comment, then show it
+      // in place (no duplicate before/after -- the old answer is replaced).
+      var el = document.getElementById("content");
+      el.innerHTML = '<div class="spinner"><div class="dot"></div> ' +
+                     'Updating the recommendation based on your feedback…</div>';
+      var refineUrl = REFINE + "?case=" + encodeURIComponent(getCaseId()) +
+                      "&comment=" + encodeURIComponent(comment);
+      fetch(refineUrl)
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(function (html) {
+          fbDone = false;          // allow feedback again on the new answer
+          render(html);
+        })
+        .catch(function () {
+          showErr("Could not update the recommendation. Your feedback was recorded.");
+        });
     }
 
     function showErr(msg) {
@@ -157,6 +168,7 @@
     (function () {
       var caseId = getCaseId();
       if (!caseId) { showErr("No case id was passed to the dialog."); return; }
+      wireLinks(document.getElementById("content"));   // delegated: attach ONCE, survives re-renders
       fetch(BACKEND + "?case=" + encodeURIComponent(caseId))
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
         .then(render)

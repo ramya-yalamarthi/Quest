@@ -51,7 +51,7 @@ def _pct(x) -> str:
         return "-"
 
 
-def _context(case: dict, similar: list) -> dict:
+def _context(case: dict, similar: list, feedback: str = "") -> dict:
     return {
         "event": {"type": "reactivate", "payload": {
             "ticket_id": case.get("id"),
@@ -60,6 +60,7 @@ def _context(case: dict, similar: list) -> dict:
             "assigned_team": case.get("assigned_team", ""),
         }},
         "similar": similar,
+        "feedback": feedback,        # engineer's 👎 comment -> agents correct the answer
     }
 
 
@@ -172,9 +173,13 @@ def process_case(
     agents: Optional[dict] = None,
     ref_search_fn: Optional[Callable] = None,
     link_validate_fn: Optional[Callable] = None,
+    feedback: str = "",
 ) -> tuple:
     """Run Routing -> Diagnosis -> Recommendation for `case`, grounded in the
-    similar `corpus` cases, and bind into one note. Returns (advisory, note)."""
+    similar `corpus` cases, and bind into one note. Returns (advisory, note).
+
+    feedback: an engineer's 👎 comment on a previous answer; when set, the
+    agents produce a corrected answer that addresses it."""
     agents = agents or {}
     routing_agent = agents.get("routing") or RoutingAgent()
     diagnosis_agent = agents.get("diagnosis") or DiagnosisAgent()
@@ -188,7 +193,7 @@ def process_case(
     similar = rank_similar(case, closed_corpus, top_k=top_k, min_score=min_score, embed_fn=embed_fn)
     for s in similar:                                  # add clickable D365 links
         s["url"] = case_url(org_base, s.get("id"))
-    context = _context(case, similar)                  # agents ground on ALL matches
+    context = _context(case, similar, feedback=feedback)   # agents ground on ALL matches
 
     routing = routing_agent.run(context)               # team check
     diag = diagnosis_agent.run(context)                # root cause

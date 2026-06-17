@@ -332,3 +332,26 @@ def record_feedback(case: str, v: str = "like", comment: str = ""):
         "<h2>Thanks for your feedback!</h2>"
         f"<p style='color:#666'>{sub}</p></body></html>"
     )
+
+
+@router.get("/refine", response_class=HTMLResponse)
+def refine_recommendation(case: str, comment: str = ""):
+    """Regenerate the recommendation for a Case, taking the engineer's 👎 comment
+    into account, and return the new note HTML for the pop-up. DISPLAY ONLY --
+    does not overwrite the timeline note (the webhook is the single writer)."""
+    try:
+        from app.orchestrator.dataverse import DataverseClient, available
+        if not available():
+            return "<p style='font-family:Segoe UI,Arial'>Service not configured.</p>"
+        client = DataverseClient()
+        case = case.replace("{", "").replace("}", "").strip()
+        target = client.get_case(case)
+        if not target:
+            return "<p style='font-family:Segoe UI,Arial'>Case not found.</p>"
+        from app.orchestrator.d365_runner import process_case
+        corpus = client.list_cases(top=100, resolved_only=True)
+        _, note = process_case(target, corpus, org_base=client.cfg["base"],
+                               feedback=(comment or ""))
+        return note
+    except Exception as exc:
+        return f"<p style='font-family:Segoe UI,Arial'>Could not refine: {exc}</p>"

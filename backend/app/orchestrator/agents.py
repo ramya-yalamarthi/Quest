@@ -49,6 +49,18 @@ def _format_similar(similar: list, limit: int = 5) -> str:
     return "\n".join(lines)
 
 
+def _feedback_note(context: dict) -> str:
+    """If the engineer marked the previous answer NOT helpful and left a comment,
+    return a prompt suffix telling the agent to correct its answer accordingly."""
+    fb = (context.get("feedback") or "").strip()
+    if not fb:
+        return ""
+    return ("\n\nENGINEER FEEDBACK: the previous AI answer was marked NOT helpful. "
+            "The engineer said:\n\"" + fb + "\"\n"
+            "Produce a corrected, more accurate answer that directly addresses this "
+            "feedback. Do not repeat the earlier answer verbatim.")
+
+
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
@@ -75,7 +87,8 @@ class RoutingAgent:
 
     def run(self, context: dict) -> dict:
         title, desc, assigned = _ticket_fields(context)
-        result = chat_json(_ROUTING_SYSTEM, f"Case title: {title}\nDescription: {desc}")
+        result = chat_json(_ROUTING_SYSTEM,
+                           f"Case title: {title}\nDescription: {desc}" + _feedback_note(context))
         rec = str((result or {}).get("recommended_team", "")).strip() or "General"
         assigned_norm = (assigned or "").strip()
         correct = None
@@ -113,6 +126,7 @@ class DiagnosisAgent:
         user = f"Case title: {title}\nDescription: {desc}"
         if similar:
             user += "\n\nSIMILAR PAST CASES:\n" + _format_similar(similar)
+        user += _feedback_note(context)
         result = chat_json(_DIAGNOSIS_SYSTEM, user)
         rc = str((result or {}).get("root_cause", "")).strip()
         grounded = bool((result or {}).get("grounded", True))
@@ -175,6 +189,7 @@ class RecommendationAgent:
                 f"Diagnosed root cause: {diagnosis.get('root_cause', '') or 'unknown'}")
         if similar:
             user += "\n\nSIMILAR PAST CASES:\n" + _format_similar(similar)
+        user += _feedback_note(context)
 
         result = chat_json(_RECOMMENDATION_SYSTEM, user, max_tokens=700)
         if not result or "hot_fix" not in result:
