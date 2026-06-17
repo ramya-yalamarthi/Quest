@@ -10,7 +10,8 @@
     .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
     .avatar { width: 34px; height: 34px; border-radius: 50%; background: #0f3d6e; color: #fff;
               display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; }
-    .head h2 { margin: 0; font-size: 16px; color: #0f3d6e; }
+    .head h2 { margin: 0; font-size: 16px; color: #0f3d6e; line-height: 1.2; }
+    .ticketno { font-size: 12px; color: #605e5c; margin-top: 2px; }
     .card { background: #fff; border: 1px solid #edebe9; border-radius: 8px; padding: 18px 20px;
             box-shadow: 0 2px 6px rgba(0,0,0,.08); line-height: 1.55; font-size: 14px; word-wrap: break-word; }
     .card b { color: #0f3d6e; }
@@ -25,7 +26,13 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="head"><div class="avatar">AI</div><h2>AI Recommendation</h2></div>
+    <div class="head">
+      <div class="avatar">AI</div>
+      <div>
+        <h2>AI Recommendation</h2>
+        <div id="ticketno" class="ticketno"></div>
+      </div>
+    </div>
     <div id="content" class="card">
       <div class="spinner"><div class="dot"></div> Loading recommendation…</div>
     </div>
@@ -95,9 +102,24 @@
       } catch (e) { showErr("Could not load the recommendation."); }
     }
 
+    // Look up the case's ticket number (the dialog only gets the GUID) and show
+    // it in the header.
+    function showTicketNumber(caseId) {
+      try {
+        var xrm = (window.parent && window.parent.Xrm) ? window.parent.Xrm : (window.Xrm || null);
+        if (!xrm || !xrm.WebApi) return;
+        xrm.WebApi.retrieveRecord("incident", caseId, "?$select=ticketnumber").then(function (r) {
+          if (r && r.ticketnumber) {
+            document.getElementById("ticketno").textContent = "Case " + r.ticketnumber;
+          }
+        }, function () { /* ignore */ });
+      } catch (e) { /* ignore */ }
+    }
+
     (function () {
       var caseId = getCaseId();
       if (!caseId) { showErr("No case id was passed to the dialog."); return; }
+      showTicketNumber(caseId);
       fetch(BACKEND + "?case=" + encodeURIComponent(caseId))
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
         .then(render)
