@@ -78,7 +78,8 @@ _ROUTING_SYSTEM = (
     "- General: accounts/access, password/MFA/lockouts, onboarding/offboarding, email/DLs, "
     "phishing, purchase/access requests, and anything not clearly in the four above\n"
     "Use ONLY one of: Software, Hardware, Network, Database, General. "
-    'Respond ONLY as JSON: {"recommended_team": "Network"}.'
+    "Also rate your confidence in the team from 0.0 to 1.0 (1.0 = certain). "
+    'Respond ONLY as JSON: {"recommended_team": "Network", "confidence": 0.0}.'
 )
 
 
@@ -90,6 +91,7 @@ class RoutingAgent:
         result = chat_json(_ROUTING_SYSTEM,
                            f"Case title: {title}\nDescription: {desc}" + _feedback_note(context))
         rec = str((result or {}).get("recommended_team", "")).strip() or "General"
+        conf = _clamp(float((result or {}).get("confidence", 0.7) or 0.7), 0.0, 1.0)
         assigned_norm = (assigned or "").strip()
         correct = None
         if assigned_norm and assigned_norm.lower() not in ("unassigned", "unknown", ""):
@@ -98,6 +100,7 @@ class RoutingAgent:
             "assigned_team": assigned_norm or "Unassigned",
             "assignment_correct": correct,            # True / False / None (no team yet)
             "recommended_team": rec,
+            "confidence": conf,
         }
 
 
@@ -113,7 +116,8 @@ _DIAGNOSIS_SYSTEM = (
     "'Likely' and end with 'confirm via <a quick check> before any disruptive action'. Set "
     '"grounded" false when the root cause relies on assumptions not stated in the case or the '
     "similar cases; true only when it is directly supported. No ticket numbers. "
-    'Respond ONLY as JSON: {"root_cause": "<one sentence>", "grounded": true}.'
+    "Also rate your confidence in the root cause from 0.0 to 1.0 (1.0 = certain). "
+    'Respond ONLY as JSON: {"root_cause": "<one sentence>", "grounded": true, "confidence": 0.0}.'
 )
 
 
@@ -130,8 +134,9 @@ class DiagnosisAgent:
         result = chat_json(_DIAGNOSIS_SYSTEM, user)
         rc = str((result or {}).get("root_cause", "")).strip()
         grounded = bool((result or {}).get("grounded", True))
+        conf = _clamp(float((result or {}).get("confidence", 0.6) or 0.6), 0.0, 1.0)
         return {"root_cause": rc or "Root cause could not be determined automatically.",
-                "grounded": grounded}
+                "grounded": grounded, "confidence": conf}
 
 
 # ---------------------------------------------------------------------------

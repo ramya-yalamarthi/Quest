@@ -94,7 +94,7 @@ def format_note(advisory: dict) -> str:
              f"(based on {len(sims)} similar tickets and {len(links)} references)")
     P.append("")
 
-    P.append("<b>TEAM ASSIGNMENT</b>")
+    P.append(f"<b>TEAM ASSIGNMENT</b> &nbsp;·&nbsp; Confidence: {_pct(r.get('confidence'))}")
     assigned = r.get("assigned_team") or "Unassigned"
     correct = r.get("assignment_correct")
     P.append(f"• Assigned team: {_esc(assigned)}")
@@ -107,7 +107,7 @@ def format_note(advisory: dict) -> str:
         P.append(f"• Recommended team: {_esc(r.get('recommended_team'))}")
     P.append("")
 
-    P.append("<b>DIAGNOSIS</b>")
+    P.append(f"<b>DIAGNOSIS</b> &nbsp;·&nbsp; Confidence: {_pct(d.get('confidence'))}")
     if d.get("root_cause"):
         P.append(f"• Root cause: {_esc(d['root_cause'])}")
     if sims:
@@ -120,7 +120,7 @@ def format_note(advisory: dict) -> str:
             P.append(f"&nbsp;&nbsp;– {link} ({_pct(shown_score)} match) · {_status(s.get('state'))}")
     P.append("")
 
-    P.append("<b>RECOMMENDATION</b>")
+    P.append(f"<b>RECOMMENDATION</b> &nbsp;·&nbsp; Confidence: {_pct(rec.get('confidence'))}")
     he = f" ({_esc(hot['eta'])})" if hot.get("eta") else ""
     P.append(f"• Hot fix{he}: {_esc(hot.get('summary', ''))}")
     ue = f" ({_esc(ult['eta'])})" if ult.get("eta") else ""
