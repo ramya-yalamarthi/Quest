@@ -5,10 +5,16 @@
 var AIREC_DIALOG = "new_new_airec_dialog";   // <- EXACT HTML web resource SCHEMA Name (the "Name" column, not the display name)
 
 function _openDialog(caseId) {
-    return Xrm.Navigation.navigateTo(
-        { pageType: "webresource", webresourceName: AIREC_DIALOG, data: caseId },
-        { target: 2, position: 1, width: 560, height: 640, title: " " }   // 2 = modal dialog, centered; blank title (space) to hide the schema-name header
-    );
+    function open(title) {
+        return Xrm.Navigation.navigateTo(
+            { pageType: "webresource", webresourceName: AIREC_DIALOG, data: caseId },
+            { target: 2, position: 1, width: 560, height: 640, title: title || " " }   // title shows in the dialog's top bar
+        );
+    }
+    // Show the case number in the dialog's top title bar.
+    return Xrm.WebApi.retrieveRecord("incident", caseId, "?$select=ticketnumber")
+        .then(function (r) { return open(r && r.ticketnumber ? r.ticketnumber : " "); },
+              function () { return open(" "); });
 }
 
 // Command-bar button handler.
