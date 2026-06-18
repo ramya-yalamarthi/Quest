@@ -62,10 +62,15 @@ def poll_once(
 
 
 def _auto_resolve(client, case: dict, advisory: dict) -> None:
-    """If the mitigation gate passed, perform the one genuinely real action:
-    resolve + close the Case in Dynamics. Logged, and never fatal to the poll."""
+    """Close the Case in Dynamics ONLY when the auto-fix actually verified
+    (should_close). The safety net sets should_close=False on a reverted /
+    auto-off outcome so a still-broken case is never auto-closed. Logged, and
+    never fatal to the poll."""
     mit = (advisory or {}).get("mitigation") or {}
-    if not mit.get("gate_passed"):
+    should_close = mit.get("should_close")
+    if should_close is None:                  # back-compat: advisories without the safety net
+        should_close = mit.get("gate_passed")
+    if not should_close:
         return
     num = case.get("ticket_number")
     try:                                            # move the process bar to Resolve FIRST

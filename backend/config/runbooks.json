@@ -10,7 +10,9 @@
     "steps": ["Unlock the account",
               "Re-trigger MFA registration",
               "Verify sign-in succeeds"],
-    "verify": "Sign-in health check passed"
+    "verify": "Sign-in health check passed",
+    "revert_steps": ["Re-lock the account to its prior state",
+                     "Cancel the MFA re-registration"]
   },
   {
     "key": "hung_service",
@@ -24,6 +26,8 @@
     "steps": ["Restart the affected service (not the host)",
               "Wait for warm-up",
               "Re-test reachability / response time"],
-    "verify": "Service responds; reachability restored"
+    "verify": "Service responds; reachability restored",
+    "revert_steps": ["Stop the restarted service",
+                     "Restore the previous service state / failover"]
   }
 ]

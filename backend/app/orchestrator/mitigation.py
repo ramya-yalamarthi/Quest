@@ -22,6 +22,8 @@ Dynamics -- is done by the caller (the poller) via DataverseClient.close_inciden
 
 from __future__ import annotations
 
+import os
+
 from app.orchestrator.appconfig import load_json, env_float
 
 # --- Safety gate thresholds (externalised; override via env) -----------------
@@ -51,6 +53,8 @@ _DEFAULT_RECIPES = [
                   "Re-trigger MFA registration",
                   "Verify sign-in succeeds"],
         "verify": "Sign-in health check passed",
+        "revert_steps": ["Re-lock the account to its prior state",
+                         "Cancel the MFA re-registration"],
     },
     {
         "key": "hung_service",
@@ -65,6 +69,8 @@ _DEFAULT_RECIPES = [
                   "Wait for warm-up",
                   "Re-test reachability / response time"],
         "verify": "Service responds; reachability restored",
+        "revert_steps": ["Stop the restarted service",
+                         "Restore the previous service state / failover"],
     },
 ]
 
@@ -149,3 +155,70 @@ def _resolution_text(recipe: dict, confidence: float, top: dict) -> str:
             f"{prec_s}, confidence {confidence:.0%}. Runbook: {steps}. "
             "(External remediation steps run via a connector in production; "
             "the Dynamics resolve/close is live.)")
+
+
+# --- Safety net on the AUTO path: verify -> revert -> kill switch -------------
+# Even a gated auto-fix can be wrong, so we apply -> verify -> revert-on-failure
+# (each runbook carries a revert handle) and trip a kill switch after repeated
+# failures. Lightweight for this DB-free / D365 flow: no validation window, no
+# Postgres -- the audit is the D365 case note, the kill switch is in-memory
+# (see auto_safety.py).
+
+def verify_runbook(recipe: dict, case: dict) -> bool:
+    """Did the auto-fix actually work? POC: verify PASSES (a real connector runs
+    the check in production). Two demo triggers force a FAILURE so the revert /
+    escalate / kill-switch path can be shown on command:
+      * the case text contains '[demo-fail]'
+      * env MITIGATION_FORCE_VERIFY_FAIL=1
+    """
+    if "[demo-fail]" in _case_text(case):
+        return False
+    if os.getenv("MITIGATION_FORCE_VERIFY_FAIL", "0") == "1":
+        return False
+    return True
+
+
+def revert_trace(recipe: dict) -> list[str]:
+    """The runbook's undo steps (simulated, like the forward steps)."""
+    return list(recipe.get("revert_steps") or ["Restore the prior state"])
+
+
+def finalize_mitigation(mit: dict, case: dict) -> dict:
+    """Wrap the AUTO path in a safety net: check the kill switch, then apply ->
+    verify -> (revert on failure). Adds outcome fields that the note and the
+    caller read; never raises; leaves suggest-only cases untouched.
+
+    auto_outcome is one of:
+      suggest_only        gate failed (no runbook / low conf) -> human, as before
+      auto_off            gate passed but auto mode is OFF (kill switch) -> human
+      auto_resolved       applied + verified -> caller closes the Case
+      reverted_escalated  applied, verify FAILED, change reverted -> human
+
+    should_close is True ONLY for auto_resolved.
+    """
+    if not mit.get("gate_passed"):
+        mit["auto_outcome"] = "suggest_only"
+        mit["should_close"] = False
+        return mit
+
+    from app.orchestrator import auto_safety   # lazy import (avoids import cycle)
+    if not auto_safety.is_enabled():
+        mit["auto_enabled"] = False
+        mit["auto_outcome"] = "auto_off"
+        mit["should_close"] = False
+        return mit
+
+    mit["auto_enabled"] = True
+    recipe = _RECIPE_BY_KEY.get(mit.get("recipe_key"), {})
+    if verify_runbook(recipe, case):
+        mit["verify_passed"] = True
+        mit["auto_outcome"] = "auto_resolved"
+        mit["should_close"] = True
+    else:
+        mit["verify_passed"] = False
+        mit["reverted"] = True
+        mit["revert_executed"] = revert_trace(recipe)
+        mit["auto_outcome"] = "reverted_escalated"
+        mit["should_close"] = False
+        auto_safety.record_failure(case.get("id"))
+    return mit

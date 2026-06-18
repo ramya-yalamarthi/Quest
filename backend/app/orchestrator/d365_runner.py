@@ -18,6 +18,7 @@ from typing import Callable, Optional
 from app.orchestrator.agents import RoutingAgent, DiagnosisAgent, RecommendationAgent
 from app.orchestrator.appconfig import env_float
 from app.orchestrator.mitigation import assess as mitigation_assess
+from app.orchestrator.mitigation import finalize_mitigation
 from app.orchestrator.similarity import rank_similar
 from app.orchestrator.web_refs import search_refs, validate_links, is_official_doc
 
@@ -141,20 +142,39 @@ def format_note(advisory: dict) -> str:
     P.append("")
 
     mit = advisory.get("mitigation") or {}
+    outcome = mit.get("auto_outcome")
     if mit.get("gate_passed"):
         name = _esc(mit.get("recipe_name"))
-        P.append(f"<b>🤖 AUTO-REMEDIATION — {name}</b>")
         prec = mit.get("precedent_ticket")
         prec_txt = (f" · precedent {_esc(prec)} ({_pct(mit.get('precedent_match'))})"
                     if prec else "")
-        P.append(f"• Matched the {name} runbook (signature confirmed){prec_txt}")
-        P.append(f"• Confidence: {_pct(mit.get('confidence'))} · "
-                 f"Tier {_esc(mit.get('tier'))} (reversible)")
         steps = mit.get("steps") or []
-        if steps:
-            P.append("• Runbook steps: " + " → ".join(_esc(s) for s in steps))
-        P.append("• Outcome: Case auto-resolved by the AI agent.")
-        P.append("<i>External remediation steps are not executed in this POC — a "
+        if outcome == "reverted_escalated":
+            P.append(f"<b>↩️ AUTO-REMEDIATION ATTEMPTED — {name}</b>")
+            P.append(f"• Matched the {name} runbook (signature confirmed){prec_txt}")
+            if steps:
+                P.append("• Steps applied: " + " → ".join(_esc(s) for s in steps))
+            P.append(f"• Verification ({_esc(mit.get('verify'))}): <b>FAILED</b>")
+            rev = mit.get("revert_executed") or []
+            if rev:
+                P.append("• Reverted: " + " → ".join(_esc(s) for s in rev))
+            P.append("• Outcome: change rolled back — <b>escalated to a human engineer</b> "
+                     "(case left open).")
+        elif outcome == "auto_off":
+            P.append(f"<b>🤖 AUTO-REMEDIATION AVAILABLE — {name}</b>")
+            P.append(f"• Matched the {name} runbook (signature confirmed){prec_txt}")
+            P.append("• Auto mode is currently <b>OFF</b> (kill switch) — "
+                     "routed to a human engineer.")
+        else:   # auto_resolved (verified) -- also the default for back-compat
+            P.append(f"<b>🤖 AUTO-REMEDIATION — {name}</b>")
+            P.append(f"• Matched the {name} runbook (signature confirmed){prec_txt}")
+            P.append(f"• Confidence: {_pct(mit.get('confidence'))} · "
+                     f"Tier {_esc(mit.get('tier'))} (reversible)")
+            if steps:
+                P.append("• Runbook steps: " + " → ".join(_esc(s) for s in steps))
+            P.append(f"• Verification ({_esc(mit.get('verify'))}): <b>passed</b> ✓")
+            P.append("• Outcome: Case auto-resolved by the AI agent.")
+        P.append("<i>External remediation steps are simulated in this POC — a "
                  "connector runs them in production. The Dynamics resolve/close is live.</i>")
         P.append("")
 
@@ -247,9 +267,11 @@ def process_case(
                 "recommendation": recommendation, "confidence": confidence}
 
     # Mitigation stage: can this Case be auto-remediated? (matches a runbook AND
-    # clears the safety gate). The caller (poller) does the real D365 close when
-    # gate_passed is True; otherwise the note is suggest-only, as before.
-    advisory["mitigation"] = mitigation_assess(case, similar, confidence)
+    # clears the safety gate). Then the safety net runs the AUTO path through
+    # apply -> verify -> (revert on failure) + the kill switch, so the caller
+    # only closes the Case when the fix actually verified (should_close).
+    advisory["mitigation"] = finalize_mitigation(
+        mitigation_assess(case, similar, confidence), case)
 
     # Clickable feedback links -> the orchestrator's /feedback endpoint records
     # the vote onto the case.

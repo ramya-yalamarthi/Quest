@@ -265,6 +265,28 @@ def health():
     return {"status": "ok", "service": "orchestrator"}
 
 
+class AutoMode(BaseModel):
+    enabled: bool = True
+
+
+@router.get("/auto-mode")
+def get_auto_mode():
+    """Status of the auto-remediation kill switch (enabled, recent failures, threshold)."""
+    from app.orchestrator import auto_safety
+    return auto_safety.status()
+
+
+@router.post("/auto-mode")
+def set_auto_mode(body: AutoMode, x_webhook_secret: Optional[str] = Header(default=None)):
+    """Human turns auto-remediation ON/OFF (and clears the failure window when ON).
+    Protected by WEBHOOK_SECRET if that env var is set."""
+    secret = os.getenv("WEBHOOK_SECRET")
+    if secret and x_webhook_secret != secret:
+        raise HTTPException(status_code=401, detail="invalid webhook secret")
+    from app.orchestrator import auto_safety
+    return auto_safety.set_enabled(body.enabled)
+
+
 @router.get("/recommendation", response_class=HTMLResponse)
 def get_recommendation(case: str):
     """Return the AI recommendation for a Case as HTML (for the D365 pop-up

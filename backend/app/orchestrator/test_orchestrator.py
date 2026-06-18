@@ -571,6 +571,49 @@ def test_mitigation_low_confidence_blocks_gate():
     assert m["matched"] and not m["gate_passed"] and "confidence" in m["gate_reason"]
 
 
+# --- Safety net: verify -> revert -> kill switch ----------------------------
+
+def _gatecase(extra=""):
+    return {"id": "k", "ticket_number": "CAS-K",
+            "title": f"user is locked out{extra}", "description": "account locked, mfa"}
+
+
+def test_safety_verify_pass_auto_resolves():
+    from app.orchestrator.mitigation import assess, finalize_mitigation
+    from app.orchestrator import auto_safety
+    auto_safety.set_enabled(True)                          # clean slate
+    sim = [{"ticket_number": "CAS-1", "display_score": 0.95}]
+    m = finalize_mitigation(assess(_gatecase(), sim, 0.9), _gatecase())
+    assert m["gate_passed"] and m["auto_outcome"] == "auto_resolved"
+    assert m["should_close"] is True and m["verify_passed"] is True
+
+
+def test_safety_verify_fail_reverts_and_escalates():
+    from app.orchestrator.mitigation import assess, finalize_mitigation
+    from app.orchestrator import auto_safety
+    auto_safety.set_enabled(True)
+    case = _gatecase(" [demo-fail]")                       # force verify failure
+    sim = [{"ticket_number": "CAS-1", "display_score": 0.95}]
+    m = finalize_mitigation(assess(case, sim, 0.9), case)
+    assert m["auto_outcome"] == "reverted_escalated" and m["should_close"] is False
+    assert m["reverted"] is True and m.get("revert_executed")
+    auto_safety.set_enabled(True)                          # reset (a failure was recorded)
+
+
+def test_kill_switch_trips_after_threshold_then_auto_off():
+    from app.orchestrator import auto_safety
+    from app.orchestrator.mitigation import assess, finalize_mitigation
+    auto_safety.set_enabled(True)
+    assert auto_safety.is_enabled() is True
+    for _ in range(auto_safety.THRESHOLD):
+        auto_safety.record_failure("x")
+    assert auto_safety.is_enabled() is False               # tripped off
+    sim = [{"ticket_number": "CAS-1", "display_score": 0.95}]
+    m = finalize_mitigation(assess(_gatecase(), sim, 0.9), _gatecase())
+    assert m["auto_outcome"] == "auto_off" and m["should_close"] is False
+    auto_safety.set_enabled(True)                          # reset for other tests
+
+
 def test_poller_auto_resolves_when_gate_passed():
     from app.orchestrator.d365_poller import poll_once
     cases = [{"id": "9", "ticket_number": "CAS-9", "title": "locked out", "description": "x",
