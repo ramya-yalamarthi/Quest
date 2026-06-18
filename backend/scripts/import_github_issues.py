@@ -40,7 +40,7 @@ from app.orchestrator.dataverse import DataverseClient, available  # noqa: E402
 GH_REPO = os.getenv("GH_REPO", "kubernetes-sigs/karpenter")
 GH_LABEL = os.getenv("GH_LABEL", "kind/bug")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
-MAX_DESC = 4000          # cap the description so embeddings stay focused
+MAX_DESC = 1990          # incident.description max length is 2000 in D365
 
 
 def _gh(url: str) -> dict:
