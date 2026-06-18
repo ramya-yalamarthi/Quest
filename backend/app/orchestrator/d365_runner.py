@@ -16,16 +16,17 @@ import re
 from typing import Callable, Optional
 
 from app.orchestrator.agents import RoutingAgent, DiagnosisAgent, RecommendationAgent
+from app.orchestrator.appconfig import env_float
 from app.orchestrator.mitigation import assess as mitigation_assess
 from app.orchestrator.similarity import rank_similar
 from app.orchestrator.web_refs import search_refs, validate_links, is_official_doc
 
 NOTE_SUBJECT = "AI Support Recommendation"
-# Public base URL of the deployed orchestrator (where the feedback links point).
-DEFAULT_PUBLIC_URL = "https://quest-z7e4.onrender.com"
+# Public base URL of the deployed orchestrator (override via PUBLIC_BASE_URL env).
+DEFAULT_PUBLIC_URL = os.getenv("PUBLIC_BASE_URL", "https://quest-z7e4.onrender.com")
 # Hide matches weaker than this CALIBRATED relevance from the note (the weak
 # tail), but always keep the single strongest match.
-MIN_DISPLAY = 0.35
+MIN_DISPLAY = env_float("MIN_DISPLAY", 0.35)
 
 
 def case_url(org_base: str, case_id: str) -> str:

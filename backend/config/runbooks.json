@@ -1,0 +1,29 @@
+[
+  {
+    "key": "account_lockout",
+    "name": "Account Lockout",
+    "tier": "A",
+    "reversible": true,
+    "signals": ["locked out", "lockout", "account locked", "account is locked",
+                "password reset", "can't sign in", "cannot sign in", "can't log in",
+                "mfa", "multi-factor", "unlock"],
+    "steps": ["Unlock the account",
+              "Re-trigger MFA registration",
+              "Verify sign-in succeeds"],
+    "verify": "Sign-in health check passed"
+  },
+  {
+    "key": "hung_service",
+    "name": "Hung Service Restart",
+    "tier": "A",
+    "reversible": true,
+    "signals": ["license server", "licence server", "lmgrd", "flexnet", "port 27000",
+                "won't start", "wont start", "refusing to start", "unreachable",
+                "dns resolution", "dns server", "resolution slow", "service hung",
+                "service stuck", "service unresponsive", "timing out"],
+    "steps": ["Restart the affected service (not the host)",
+              "Wait for warm-up",
+              "Re-test reachability / response time"],
+    "verify": "Service responds; reachability restored"
+  }
+]

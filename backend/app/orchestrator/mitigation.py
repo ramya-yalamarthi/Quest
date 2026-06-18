@@ -22,19 +22,22 @@ Dynamics -- is done by the caller (the poller) via DataverseClient.close_inciden
 
 from __future__ import annotations
 
-# --- Safety gate thresholds --------------------------------------------------
+from app.orchestrator.appconfig import load_json, env_float
+
+# --- Safety gate thresholds (externalised; override via env) -----------------
 # Auto-execute (Tier A) requires BOTH signals high -- not just their average --
 # AND a reversible runbook. A novel incident with no close precedent drops below
 # the gate and falls to suggest-only, exactly like Copilot.
-CONF_MIN = 0.85       # blended confidence (model + precedent)
-MATCH_MIN = 0.80      # calibrated relevance of the closest past case
+CONF_MIN = env_float("MITIGATION_CONF_MIN", 0.85)    # blended confidence
+MATCH_MIN = env_float("MITIGATION_MATCH_MIN", 0.80)  # calibrated precedent match
 
 
 # --- The runbook registry (the "recipe book") --------------------------------
+# Loaded from backend/config/runbooks.json so support can add/edit runbooks
+# WITHOUT a code change; the in-code list below is the fallback default.
 # Each recipe: how to RECOGNISE it (signature keywords), the fixed STEPS, its
-# safety TIER, and whether it is REVERSIBLE. Same workflow every time; only the
-# target (which user / service / email) comes from the ticket.
-RECIPES = [
+# safety TIER, and whether it is REVERSIBLE.
+_DEFAULT_RECIPES = [
     {
         "key": "account_lockout",
         "name": "Account Lockout",
@@ -64,6 +67,9 @@ RECIPES = [
         "verify": "Service responds; reachability restored",
     },
 ]
+
+# Config file overrides the defaults (falls back to _DEFAULT_RECIPES if missing).
+RECIPES = load_json("runbooks.json", _DEFAULT_RECIPES)
 
 _RECIPE_BY_KEY = {r["key"]: r for r in RECIPES}
 

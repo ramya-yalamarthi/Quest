@@ -12,8 +12,11 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-# hostname -> display source label
-TRUSTED_DOMAINS = {
+from app.orchestrator.appconfig import load_json
+
+# hostname -> display source label. Loaded from backend/config/trusted_domains.json
+# (edit there without a code change); the in-code map below is the fallback.
+_DEFAULT_TRUSTED_DOMAINS = {
     "learn.microsoft.com": "Microsoft Learn",
     "docs.microsoft.com": "Microsoft Docs",
     "techcommunity.microsoft.com": "Microsoft Tech Community",
@@ -50,6 +53,9 @@ TRUSTED_DOMAINS = {
     "google.com": "Google Help",
     "mozilla.org": "MDN / Mozilla",
 }
+
+# Config file overrides the defaults (falls back if missing/invalid).
+TRUSTED_DOMAINS = load_json("trusted_domains.json", _DEFAULT_TRUSTED_DOMAINS)
 
 
 def is_trusted(url: str) -> bool:

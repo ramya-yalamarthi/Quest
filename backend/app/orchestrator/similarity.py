@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 from typing import Callable, Optional
 
+from app.orchestrator.appconfig import env_float
 from app.orchestrator.embeddings import embed_texts as _default_embed
 
 
@@ -32,8 +33,8 @@ def case_text(case: dict) -> str:
 # -- the same idea as a search reranker's calibrated score. Ranking, ordering,
 # grounding, and the agents are all unchanged; this only affects the number a
 # human sees.
-REL_FLOOR = 0.40      # at/below this cosine -> 0% (effectively unrelated)
-REL_CEILING = 0.78    # at/above this cosine -> 100% (near-identical for this model)
+REL_FLOOR = env_float("REL_FLOOR", 0.40)      # at/below this cosine -> 0% (unrelated)
+REL_CEILING = env_float("REL_CEILING", 0.78)  # at/above this cosine -> 100% (near-identical)
 
 
 def relevance(cosine: float) -> float:
