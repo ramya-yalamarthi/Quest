@@ -52,10 +52,43 @@ Agent (MCP client)
   └─ knowledge.search_docs          -> official doc link
 ```
 
-## Roadmap (beyond Phase 1)
-- **Phase 2** — let the LLM choose tools (model-driven tool calling) instead of a fixed sequence.
-- **Phase 3** — replace the SIMULATED remediation with real **Graph / SQL / Defender** connectors behind a **least-privilege** identity + the approval gate (this is where auto-remediation becomes real and governed).
-- **Phase 4** — register the servers in **Copilot Studio / Azure AI Foundry** so other agents reuse them.
+## Phases 2–4 (built)
 
-> Phase 1 is a scaffold/demonstration. It does not replace the deployed webhook
-> pipeline — that still runs on the proven direct-integration path.
+### Phase 2 — model-driven tool-calling  (`app/mcp_client/tool_calling_agent.py`)
+The MODEL (gpt-4o) decides which tools to call, in what order, via a reason-act
+loop. The MCP tools are bridged to OpenAI function schemas. The safety gate is
+enforced server-side (`assess_remediation`) — the model can request a remediation
+but cannot bypass the gate.
+```
+python -m app.mcp_client.tool_calling_agent      # runs with a stub LLM locally
+```
+> Live tool-selection needs gpt-4o (runs on Render); the loop + bridge are local-testable with the stub.
+
+### Phase 3 — governed remediation  (`app/mcp_servers/connectors.py`)
+Each runbook action runs through a **connector** that declares its **least-privilege
+scope** and is audited. The runbook **tier** decides the flow:
+- **Tier A** → auto-execute via connectors
+- **Tier B** → prepare actions + **require human approval**
+- **Tier C** → **human-only**
+
+Connectors are **simulated** today; registering a real Graph/SQL/Defender
+implementation in `connectors.register(...)` makes it live — nothing else changes.
+This is the seam to wire real, scoped access when Microsoft grants it.
+
+### Phase 4 — HTTP transport for Copilot reuse  (`app/mcp_servers/_runtime.py`)
+Each server can run over **streamable-HTTP** so it's registerable in Copilot
+Studio / Azure AI Foundry and reusable by other agents:
+```
+# stdio (default, local agent)
+python -m app.mcp_servers.dataverse_server
+# HTTP (network / registerable)
+MCP_TRANSPORT=http MCP_PORT=8101 python -m app.mcp_servers.dataverse_server
+```
+**Register in Copilot Studio:** add a Tool → MCP server → point it at the server's
+HTTP URL (e.g. `http://<host>:8101/mcp`). Copilot then discovers the tools and can
+call them — the same `find_similar_cases` / `run_runbook` tools this agent uses.
+
+> All phases are additive scaffolds. They do not replace the deployed webhook
+> pipeline, which still runs on the proven direct-integration path. The remaining
+> gaps to go fully live are EXTERNAL (gpt-4o for Phase 2, real connectors for
+> Phase 3, a Copilot Studio environment for Phase 4) — not code.

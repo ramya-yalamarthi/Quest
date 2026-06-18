@@ -396,7 +396,7 @@ class _FakeClient:
         self.posted = []
         self.resolved = []
 
-    def list_cases(self, top=100):
+    def list_cases(self, top=100, resolved_only=False, **kw):
         return list(self._cases)[:top]
 
     def case_has_note(self, case_id, subject):

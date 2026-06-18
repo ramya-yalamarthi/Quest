@@ -25,4 +25,5 @@ def search_docs(query: str, count: int = 2) -> list:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    from app.mcp_servers._runtime import run_server
+    run_server(mcp, default_port=8102)

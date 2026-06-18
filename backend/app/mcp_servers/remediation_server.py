@@ -16,6 +16,7 @@ from mcp.server.fastmcp import FastMCP
 from app.orchestrator.mitigation import (
     RECIPES, _RECIPE_BY_KEY, match_recipe, assess, execution_trace,
 )
+from app.mcp_servers import connectors  # Phase 3: governed, least-privilege execution
 
 mcp = FastMCP("remediation")
 
@@ -59,5 +60,19 @@ def run_runbook(key: str) -> dict:
             "note": "external actions simulated in this POC; a real connector executes them in production"}
 
 
+@mcp.tool()
+def execute_runbook_governed(key: str) -> dict:
+    """Phase 3 — GOVERNED execution via connectors. Each action runs through a
+    connector that declares its LEAST-PRIVILEGE scope and is audited. The runbook's
+    TIER decides the flow: Tier A auto-executes; Tier B prepares + requires human
+    approval; Tier C is human-only. (Connectors are simulated until real Graph /
+    SQL / Defender connectors are registered.)"""
+    r = _RECIPE_BY_KEY.get(key)
+    if not r:
+        return {"error": f"unknown runbook '{key}'"}
+    return connectors.execute_runbook(key, tier=r.get("tier", "A"))
+
+
 if __name__ == "__main__":
-    mcp.run()
+    from app.mcp_servers._runtime import run_server
+    run_server(mcp, default_port=8103)

@@ -63,4 +63,5 @@ def advance_bpf(case_id: str) -> bool:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    from app.mcp_servers._runtime import run_server
+    run_server(mcp, default_port=8101)
