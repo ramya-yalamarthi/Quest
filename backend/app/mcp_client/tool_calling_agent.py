@@ -142,12 +142,14 @@ class _StubLLM:
 if __name__ == "__main__":
     title = "User locked out - cannot sign in, password reset needed after leave"
     desc = "Account locked after repeated failed logins; old MFA device, manager approval attached."
+    # Use REAL gpt-4o when OPENAI_* is set; otherwise the scripted stub.
+    from app.mcp_client.llm_adapter import available, chat_raw
+    llm = chat_raw if available() else _StubLLM()
+    mode = "gpt-4o (LIVE)" if available() else "stub LLM (set OPENAI_* for live)"
     print("=" * 72)
-    print("PHASE 2 — model-driven tool-calling agent  (stub LLM; gpt-4o does this live)")
+    print(f"PHASE 2 — model-driven tool-calling agent  [{mode}]")
     print("=" * 72)
-    out = run_agent(title, desc, _StubLLM())
+    out = run_agent(title, desc, llm)
     for i, step in enumerate(out["trace"], 1):
-        r = step["result"]
-        short = (r if isinstance(r, dict) else r)
-        print(f"  step {i}: model chose -> {step['tool']}")
+        print(f"  step {i}: model chose -> {step['tool']}({json.dumps(step['args'])[:60]})")
     print("\nFINAL (model):", out["final"])
