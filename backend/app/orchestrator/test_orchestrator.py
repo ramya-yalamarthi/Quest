@@ -502,7 +502,8 @@ def test_mitigation_matches_and_gate_passes():
     m = assess(case, similar, confidence=0.92)
     assert m["matched"] and m["gate_passed"]
     assert m["recipe_key"] == "account_lockout" and m["recipe_match"] == 1.0
-    assert m["executed"] and all(s.endswith("✓") for s in m["executed"])
+    # steps are shown plainly -- no misleading "done" tick (external steps aren't executed)
+    assert m["executed"] and all("✓" not in s for s in m["executed"])
 
 
 def test_mitigation_no_runbook_is_suggest_only():

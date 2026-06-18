@@ -63,9 +63,8 @@ register("verify_health",   "(read-only health probe)",                       _s
 
 # Which connector actions each runbook performs (maps the human steps to actions).
 RUNBOOK_ACTIONS = {
-    "account_lockout":      ["unlock_account", "reset_mfa", "verify_health"],
-    "hung_service":         ["restart_service", "verify_health"],
-    "phishing_containment": ["purge_message", "block_sender"],
+    "account_lockout": ["unlock_account", "reset_mfa", "verify_health"],
+    "hung_service":    ["restart_service", "verify_health"],
 }
 
 

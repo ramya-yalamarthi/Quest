@@ -143,19 +143,18 @@ def format_note(advisory: dict) -> str:
     if mit.get("gate_passed"):
         name = _esc(mit.get("recipe_name"))
         P.append(f"<b>🤖 AUTO-REMEDIATION — {name}</b>")
-        P.append(f"✓ Matched the {name} runbook — 100% (signature confirmed)")
         prec = mit.get("precedent_ticket")
         prec_txt = (f" · precedent {_esc(prec)} ({_pct(mit.get('precedent_match'))})"
                     if prec else "")
+        P.append(f"• Matched the {name} runbook (signature confirmed){prec_txt}")
         P.append(f"• Confidence: {_pct(mit.get('confidence'))} · "
-                 f"Tier {_esc(mit.get('tier'))} (reversible){prec_txt}")
-        P.append("• Actions executed:")
-        for line in mit.get("executed", []):
-            P.append(f"&nbsp;&nbsp;– {_esc(line)}")
-        P.append(f"• Verification: {_esc(mit.get('verify'))} ✓")
+                 f"Tier {_esc(mit.get('tier'))} (reversible)")
+        steps = mit.get("steps") or []
+        if steps:
+            P.append("• Runbook steps: " + " → ".join(_esc(s) for s in steps))
         P.append("• Outcome: Case auto-resolved by the AI agent.")
-        P.append("<i>External actions simulated in this environment; the D365 "
-                 "resolve/close is live.</i>")
+        P.append("<i>External remediation steps are not executed in this POC — a "
+                 "connector runs them in production. The Dynamics resolve/close is live.</i>")
         P.append("")
 
     like = advisory.get("feedback_like_url")

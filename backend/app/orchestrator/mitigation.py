@@ -63,20 +63,6 @@ RECIPES = [
                   "Re-test reachability / response time"],
         "verify": "Service responds; reachability restored",
     },
-    {
-        "key": "phishing_containment",
-        "name": "Phishing Containment",
-        "tier": "A",
-        "reversible": True,
-        "signals": ["phishing", "phish", "credential harvest", "credential-harvest",
-                    "spoof", "malicious email", "malicious link", "reported email",
-                    "impersonating"],
-        "steps": ["Purge the message tenant-wide",
-                  "Block the sender + URL",
-                  "Force password reset for confirmed clickers",
-                  "Compile the exposure report onto the case"],
-        "verify": "Campaign purged; sender/URL blocked",
-    },
 ]
 
 _RECIPE_BY_KEY = {r["key"]: r for r in RECIPES}
@@ -97,10 +83,10 @@ def match_recipe(case: dict) -> dict | None:
 
 
 def execution_trace(recipe: dict) -> list[str]:
-    """The simulated execution result -- each fixed step marked done. In
-    production the executor calls the real system (Graph / SQL / Defender); here
-    the step is simulated so the demo runs without those connectors."""
-    return [f"{step} ✓" for step in recipe["steps"]]
+    """The runbook's steps. NOT marked done -- the external actions are not
+    executed in this POC (a real Graph/SQL/Defender connector runs them in
+    production), so we never show a misleading 'completed' tick."""
+    return list(recipe["steps"])
 
 
 def assess(case: dict, similar: list, confidence: float) -> dict:
@@ -153,6 +139,7 @@ def _resolution_text(recipe: dict, confidence: float, top: dict) -> str:
     steps = " -> ".join(recipe["steps"])
     prec = top.get("ticket_number")
     prec_s = f" (precedent {prec})" if prec else ""
-    return (f"Auto-remediated by AI agent via the {recipe['name']} runbook"
-            f"{prec_s}, confidence {confidence:.0%}. Executed: {steps}. "
-            f"Verified: {recipe['verify']}.")
+    return (f"Auto-resolved by AI agent via the {recipe['name']} runbook"
+            f"{prec_s}, confidence {confidence:.0%}. Runbook: {steps}. "
+            "(External remediation steps run via a connector in production; "
+            "the Dynamics resolve/close is live.)")
