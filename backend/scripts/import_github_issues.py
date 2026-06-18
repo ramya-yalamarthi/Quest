@@ -53,8 +53,19 @@ def _gh(url: str) -> dict:
 
 
 def fetch_issues(limit: int) -> list:
-    """Closed, completed issues (not PRs) via the Search API. Returns dicts with
-    number, title, body, url."""
+    """Return solved issues as dicts (number, title, body, url).
+
+    Prefers the bundled JSON snapshot (offline -- no GitHub token, rate limit,
+    or SSL needed). Falls back to the live GitHub Search API if the file is
+    absent."""
+    local = os.getenv("GH_ISSUES_FILE") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "karpenter_issues.json")
+    if os.path.exists(local):
+        with open(local) as f:
+            data = json.load(f)
+        print(f"Loaded {len(data)} issues from {os.path.basename(local)} (offline snapshot).")
+        return data[:limit]
+
     q = f"repo:{GH_REPO} type:issue state:closed reason:completed"
     if GH_LABEL:
         q += f' label:"{GH_LABEL}"'
