@@ -88,7 +88,8 @@ class DataverseClient:
         return self._token
 
     # -- low-level request ------------------------------------------------
-    def _request(self, method: str, path: str, body: Optional[dict] = None) -> Optional[dict]:
+    def _request(self, method: str, path: str, body: Optional[dict] = None,
+                 extra_headers: Optional[dict] = None) -> Optional[dict]:
         url = f"{self.cfg['base']}/api/data/{API_VERSION}/{path.lstrip('/')}"
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(url, data=data, method=method)
@@ -98,9 +99,33 @@ class DataverseClient:
         req.add_header("OData-Version", "4.0")
         if body is not None:
             req.add_header("Content-Type", "application/json")
+        for k, v in (extra_headers or {}).items():
+            req.add_header(k, v)
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             raw = r.read()
             return json.loads(raw) if raw else None
+
+    # -- create / customer (used by the GitHub-issue import script) -------
+    def first_customer_bind(self) -> Optional[str]:
+        """Return an @odata.bind to an existing account (or contact) to use as
+        the required customer on imported cases. None if the org has neither."""
+        acc = (self._request("GET", "accounts?$select=accountid&$top=1") or {}).get("value", [])
+        if acc:
+            return f"/accounts({acc[0]['accountid']})"
+        con = (self._request("GET", "contacts?$select=contactid&$top=1") or {}).get("value", [])
+        if con:
+            return f"/contacts({con[0]['contactid']})"
+        return None
+
+    def create_incident(self, title: str, description: str, customer_bind: str) -> Optional[str]:
+        """Create a Case (incident) and return its new id. `customer_bind` is the
+        required customer, e.g. '/accounts(<guid>)'."""
+        key = "customerid_account@odata.bind" if "/accounts(" in customer_bind \
+            else "customerid_contact@odata.bind"
+        body = {"title": (title or "Untitled")[:300], "description": description or "", key: customer_bind}
+        resp = self._request("POST", "incidents", body,
+                             extra_headers={"Prefer": "return=representation"})
+        return (resp or {}).get("incidentid")
 
     # -- cases ------------------------------------------------------------
     def list_cases(self, top: int = 50, created_after: Optional[str] = None,
