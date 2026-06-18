@@ -40,3 +40,4 @@ frontend/dist/
 frontend/.next/
 frontend/out/
 frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
