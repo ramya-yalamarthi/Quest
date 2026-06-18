@@ -385,6 +385,50 @@ def test_d365_runner_full_pipeline_and_note():
     assert "\U0001f44d" in note and "\U0001f44e" in note  # plain 👍 / 👎 emojis
 
 
+def test_mcp_engine_matches_legacy_engine():
+    """The deterministic MCP engine must produce the IDENTICAL advisory + note as
+    the legacy engine (it reuses process_case, only changing the call path through
+    the MCP tool boundary). Same inputs -> byte-identical output."""
+    from app.orchestrator.d365_runner import process_case
+    from app.orchestrator.mcp_engine import process_case_mcp
+    case = {"id": "new", "ticket_number": "CAS-NEW",
+            "title": "Coffee machine not heating", "description": "coffee"}
+    corpus = [
+        {"id": "b", "ticket_number": "CAS-1", "title": "Coffeemaker won't heat",
+         "description": "coffee", "state": 1},
+        {"id": "a", "ticket_number": "CAS-2", "title": "Network down", "description": "network"},
+    ]
+    fake_refs = lambda q, n=3: [{"title": "Manage quota",
+                                 "url": "https://learn.microsoft.com/azure/quota",
+                                 "source": "Microsoft Learn"}]
+    passthrough = lambda links, n=3: links
+    kw = dict(org_base="https://org.crm.dynamics.com", embed_fn=_fake_embed,
+              ref_search_fn=fake_refs, link_validate_fn=passthrough)
+    with _patch_llm(_llm_stub()):
+        legacy_adv, legacy_note = process_case(case, corpus, **kw)
+    with _patch_llm(_llm_stub()):
+        mcp_adv, mcp_note = process_case_mcp(case, corpus, **kw)
+    assert mcp_note == legacy_note            # same bound note
+    assert mcp_adv == legacy_adv              # same advisory (routing/diag/rec/conf/mitigation)
+
+
+def test_engine_selector_flag():
+    """ENGINE flag picks the engine; defaults to legacy (the fallback)."""
+    import os
+    from app.orchestrator import engine as eng
+    from app.orchestrator.d365_runner import process_case
+    from app.orchestrator.mcp_engine import process_case_mcp
+    old = os.environ.pop("ENGINE", None)
+    try:
+        assert eng.engine_name() == "legacy" and eng.select_engine() is process_case
+        os.environ["ENGINE"] = "mcp"
+        assert eng.engine_name() == "mcp" and eng.select_engine() is process_case_mcp
+    finally:
+        os.environ.pop("ENGINE", None)
+        if old is not None:
+            os.environ["ENGINE"] = old
+
+
 # --- D365 poller (automation) -----------------------------------------------
 
 class _FakeClient:

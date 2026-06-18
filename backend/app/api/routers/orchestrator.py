@@ -192,7 +192,8 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
     if not case:
         raise HTTPException(status_code=404, detail="case not found")
 
-    from app.orchestrator.d365_runner import process_case, NOTE_SUBJECT
+    from app.orchestrator.d365_runner import NOTE_SUBJECT
+    from app.orchestrator.engine import select_engine, engine_name
     if client.case_has_note(case["id"], NOTE_SUBJECT):
         return {"status": "already_processed", "ticket": case["ticket_number"]}
 
@@ -211,7 +212,7 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
         ann_id = None
     try:
         corpus = client.list_cases(top=100, resolved_only=True)   # learn from closed cases only
-        advisory, note = process_case(case, corpus, org_base=client.cfg["base"])
+        advisory, note = select_engine()(case, corpus, org_base=client.cfg["base"])
         if ann_id:
             client.update_case_note(ann_id, note)  # fill in the placeholder
         else:
@@ -233,6 +234,7 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
 
     mit = advisory.get("mitigation") or {}
     return {"status": "processed", "ticket": case["ticket_number"],
+            "engine": engine_name(),
             "auto_resolved": bool(mit.get("gate_passed"))}
 
 
