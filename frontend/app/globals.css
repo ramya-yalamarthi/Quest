@@ -1,0 +1,32 @@
+@import "../lib/design/tokens.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    background: rgb(var(--bg));
+    color: rgb(var(--fg));
+  }
+  body {
+    min-height: 100dvh;
+    font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+  }
+  /* Headings use slightly tighter line-height; body stays at 1.5. */
+  h1, h2, h3, h4, h5, h6 { line-height: 1.25; }
+  ::selection { background: rgb(var(--accent) / 0.35); }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-border rounded-md;
+  }
+  .card-hover {
+    @apply transition-colors duration-fast ease-out hover:bg-surface-2;
+  }
+  /* Dense data row — used for activity feed, audit, etc. */
+  .data-row {
+    @apply px-4 py-3 border-b border-border last:border-b-0 grid items-center;
+  }
+}

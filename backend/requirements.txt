@@ -31,3 +31,11 @@ sentence-transformers==3.1.1
 ddgs>=0.3.0  # reliable web search (renamed from duckduckgo-search)
 requests>=2.31.0  # HTTP client for API calls
 redis>=5.0.0  # orchestrator state store + event dedupe + context cache (Day 4)
+
+# Mitigation Safety & Staged Rollout module (MS-01..MS-26)
+alembic>=1.13         # migrations for ms_* tables + immutability trigger
+apscheduler>=3.10     # durable validation-window worker (SQLAlchemyJobStore)
+httpx>=0.27           # GitHub Actions + webhook notifications
+azure-identity>=1.16  # AzureMonitorTelemetrySource (real impl)
+azure-monitor-query>=1.3
+tenacity>=8.2         # retries inside CI/telemetry adapters

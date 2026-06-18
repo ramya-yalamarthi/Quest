@@ -1,0 +1,136 @@
+/*
+ * Sentinel design tokens.
+ *
+ * The Tailwind config references these as `rgb(var(--bg) / <alpha-value>)`
+ * etc., so any class like `bg-surface` resolves through the CSS variable
+ * layer and respects light/dark at runtime.
+ *
+ * Light + dark variants are designed in pairs to keep brand, contrast, and
+ * style consistent (UX rule: color-dark-mode + dark-mode-pairing).
+ *
+ * Every status uses color + icon + text + shape — never color alone.
+ */
+
+:root {
+  /* === Dark (default) — referenced by class="dark" on <html> ============= */
+  --bg: 10 14 20;                      /* #0A0E14 */
+  --surface: 17 22 31;                 /* #11161F */
+  --surface-2: 22 28 38;               /* #161C26 */
+  --border: 35 43 54;                  /* #232B36 */
+  --border-strong: 49 59 73;           /* #313B49 */
+  --fg: 232 237 242;                   /* #E8EDF2 */
+  --fg-muted: 148 161 178;             /* #94A1B2 */
+  --fg-subtle: 94 107 122;             /* #5E6B7A */
+  --ok: 63 185 80;                     /* #3FB950 */
+  --info: 88 166 255;                  /* #58A6FF */
+  --warn: 210 153 34;                  /* #D29922 */
+  --danger: 248 81 73;                 /* #F85149 */
+  --halt: 240 136 62;                  /* #F0883E */
+  --neutral: 139 152 165;              /* #8B98A5 */
+  --accent: 45 212 191;                /* #2DD4BF */
+
+  /* Type face vars (overridden by next/font in layout.tsx) */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", "IBM Plex Mono", monospace;
+
+  /* Motion */
+  --motion-fast: 150ms;
+  --motion-default: 200ms;
+  --motion-slow: 300ms;
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Layout */
+  --topbar-h: 56px;
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 64px;
+  --safe-mode-banner-h: 72px;  /* sticky banner; used by focus-not-obscured logic */
+}
+
+html {
+  /* Tabular numerics everywhere — countdowns, KPIs, rates, audit timestamps
+   * never reflow. (UX rule: number-tabular) */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+html.light {
+  --bg: 255 255 255;                   /* #FFFFFF */
+  --surface: 255 255 255;              /* #FFFFFF */
+  --surface-2: 246 247 249;            /* #F6F7F9 */
+  --border: 229 232 236;               /* #E5E8EC */
+  --border-strong: 207 212 218;        /* #CFD4DA */
+  --fg: 14 17 22;                      /* #0E1116 */
+  --fg-muted: 84 96 110;               /* #54606E */
+  --fg-subtle: 122 134 147;            /* #7A8693 */
+  --ok: 26 127 55;                     /* #1A7F37 */
+  --info: 9 105 218;                   /* #0969DA */
+  --warn: 154 103 0;                   /* #9A6700 */
+  --danger: 207 34 46;                 /* #CF222E */
+  --halt: 240 136 62;                  /* same vivid halt — works on both */
+  --neutral: 110 122 135;              /* #6E7A87 */
+  --accent: 13 148 136;                /* #0D9488 */
+}
+
+/* prefers-reduced-motion freezes the loop ring + any streaming animation.
+ * Components also listen to this via JS for non-CSS animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visible focus on every interactive element (>=2px, accent ring).
+ * (WCAG 2.2 §2.4.7 + §1.4.11) */
+:where(button, a, input, textarea, select, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [role="option"], [tabindex]):focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* When the sticky Safe Mode banner is visible, push scroll-margin so a
+ * focused element below the banner is never obscured (WCAG 2.2 §2.4.11). */
+html.banner-active :focus-visible {
+  scroll-margin-top: calc(var(--topbar-h) + var(--safe-mode-banner-h) + 12px);
+}
+html:not(.banner-active) :focus-visible {
+  scroll-margin-top: calc(var(--topbar-h) + 12px);
+}
+
+/* Skip-to-main link is keyboard-only but always present. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: 0.5rem;
+  z-index: 1000;
+  padding: 0.5rem 0.75rem;
+  background: rgb(var(--accent));
+  color: rgb(var(--bg));
+  font-weight: 600;
+  border-radius: 6px;
+  transform: translateY(-200%);
+  transition: transform var(--motion-fast) var(--motion-ease-out);
+}
+.skip-link:focus-visible { transform: translateY(0); }
+
+/* Striped pattern for the Safe Mode banner — color + texture, never color alone. */
+.striped-halt {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgb(var(--halt) / 0.95) 0,
+    rgb(var(--halt) / 0.95) 14px,
+    rgb(var(--danger) / 0.95) 14px,
+    rgb(var(--danger) / 0.95) 28px
+  );
+}
+
+/* Tabular-mono helper (avoid sprinkling utility classes everywhere) */
+.font-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
