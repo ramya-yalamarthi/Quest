@@ -50,18 +50,6 @@ def write_note(case_id: str, text: str) -> str:
     return DataverseClient().create_case_note(case_id, "AI Support Recommendation", text) or ""
 
 
-@mcp.tool()
-def close_incident(case_id: str, subject: str = "Auto-resolved by AI agent", text: str = "") -> bool:
-    """Resolve + close a Case in Dynamics 365 (the real auto-remediation action)."""
-    return DataverseClient().close_incident(case_id, subject, text)
-
-
-@mcp.tool()
-def advance_bpf(case_id: str) -> bool:
-    """Advance the Phone-to-Case business process flow to its Resolve stage."""
-    return DataverseClient().advance_bpf_to_resolve(case_id)
-
-
 if __name__ == "__main__":
     from app.mcp_servers._runtime import run_server
     run_server(mcp, default_port=8101)

@@ -3,8 +3,8 @@ Reasoning MCP server (Phase 1).
 
 Exposes the three reasoning agents -- Routing, Diagnosis, Recommendation -- as
 governed MCP tools, so the orchestration engine drives ALL capabilities through
-one tool boundary (alongside dataverse / knowledge / remediation), instead of
-calling the agent classes directly.
+one tool boundary (alongside dataverse / knowledge), instead of calling the
+agent classes directly.
 
 The agents take a `context` dict (event payload + similar cases + optional prior
 diagnosis + engineer feedback). In-process the engine hands that context across

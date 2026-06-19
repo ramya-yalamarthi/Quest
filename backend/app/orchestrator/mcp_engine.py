@@ -2,17 +2,16 @@
 MCP-based orchestration engine (deterministic).
 
 Same pipeline as `d365_runner.process_case` -- routing -> diagnosis ->
-recommendation -> references -> confidence blend -> mitigation safety gate ->
-one bound note -- but the reasoning + knowledge capabilities are driven through
-the MCP tool boundary (the reasoning / knowledge servers) instead of calling the
-agent classes directly.
+recommendation -> references -> confidence blend -> one bound note -- but the
+reasoning + knowledge capabilities are driven through the MCP tool boundary (the
+reasoning / knowledge servers) instead of calling the agent classes directly.
 
 Why this is safe and deterministic:
   * It REUSES process_case verbatim, injecting MCP-tool-backed capabilities via
     the function's existing `agents` / `ref_search_fn` hooks. The orchestration,
-    confidence blend, grounding cap, mitigation gate and note formatting are the
-    SAME code -- so the output is identical to the legacy engine by construction
-    (no drift), the tool order is fixed, and the safety gate is always evaluated.
+    confidence blend, grounding cap and note formatting are the SAME code -- so
+    the output is identical to the legacy engine by construction (no drift) and
+    the tool order is fixed.
   * The only change is the call PATH: each reasoning agent runs behind its MCP
     tool (context serialised to JSON -- the real tool boundary), so the live
     engine and the tools registered for Copilot Studio (Phase 4) are one and the

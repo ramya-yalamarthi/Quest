@@ -54,40 +54,10 @@ def poll_once(
             advisory, note = proc(case, corpus)
             if post:
                 client.create_case_note(case.get("id"), NOTE_SUBJECT, note)
-                _auto_resolve(client, case, advisory)   # close it if the gate passed
             processed.append(case.get("ticket_number"))
         except Exception as exc:                       # one bad case must not stop the poll
             print(f"[poller] failed on {case.get('ticket_number')}: {exc}")
     return processed, new_since
-
-
-def _auto_resolve(client, case: dict, advisory: dict) -> None:
-    """Close the Case in Dynamics ONLY when the auto-fix actually verified
-    (should_close). The safety net sets should_close=False on a reverted /
-    auto-off outcome so a still-broken case is never auto-closed. Logged, and
-    never fatal to the poll."""
-    mit = (advisory or {}).get("mitigation") or {}
-    should_close = mit.get("should_close")
-    if should_close is None:                  # back-compat: advisories without the safety net
-        should_close = mit.get("gate_passed")
-    if not should_close:
-        return
-    num = case.get("ticket_number")
-    try:                                            # move the process bar to Resolve FIRST
-        client.advance_bpf_to_resolve(case.get("id"))   # (a resolved Case is read-only)
-    except Exception as exc:
-        print(f"[mitigation] {num} BPF advance skipped: {exc}")
-    try:
-        client.close_incident(
-            case.get("id"),
-            subject=f"Auto-resolved by AI agent ({mit.get('recipe_name')})",
-            text=mit.get("resolution_text", ""),
-        )
-        print(f"[mitigation] {num} matched {mit.get('recipe_key')} "
-              f"(conf {mit.get('confidence')}, match {mit.get('precedent_match')}) "
-              f"-- executed + RESOLVED+CLOSED")
-    except Exception as exc:
-        print(f"[mitigation] {num} close failed: {exc}")
 
 
 def _seed_since(client, scan: int = 50) -> str:

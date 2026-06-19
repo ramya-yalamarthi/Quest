@@ -50,8 +50,8 @@ app.include_router(orchestrator_router)
 
 # Webhook-only: recommendations are created by the /orchestrator/d365-webhook
 # endpoint (called by the Power Automate flow on case create). The background
-# poller has been removed. (d365_poller.py is kept only for the _auto_resolve
-# helper the webhook reuses, and the optional manual scripts/d365_poll.py.)
+# poller is not auto-started here; d365_poller.py (poll_once/_seed_since) is kept
+# only for the optional manual scripts/d365_poll.py.
 
 
 @app.get("/")

@@ -2,7 +2,7 @@
 Externalised configuration loader ("don't hardcode").
 
 Business rules and tunables live OUTSIDE the code:
-  * structured rules (runbooks, trusted domains) -> JSON files in backend/config/
+  * structured rules (trusted domains) -> JSON files in backend/config/
   * scalar tunables (thresholds, calibration)    -> environment variables
 
 Every getter takes a DEFAULT, so the system still runs if a file/var is missing

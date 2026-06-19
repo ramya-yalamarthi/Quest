@@ -409,7 +409,7 @@ def test_mcp_engine_matches_legacy_engine():
     with _patch_llm(_llm_stub()):
         mcp_adv, mcp_note = process_case_mcp(case, corpus, **kw)
     assert mcp_note == legacy_note            # same bound note
-    assert mcp_adv == legacy_adv              # same advisory (routing/diag/rec/conf/mitigation)
+    assert mcp_adv == legacy_adv              # same advisory (routing/diagnosis/rec/confidence)
 
 
 def test_engine_selector_flag():
@@ -438,7 +438,6 @@ class _FakeClient:
         self._cases = cases
         self._noted = noted or set()
         self.posted = []
-        self.resolved = []
 
     def list_cases(self, top=100, resolved_only=False, **kw):
         return list(self._cases)[:top]
@@ -449,15 +448,6 @@ class _FakeClient:
     def create_case_note(self, case_id, subject, text):
         self.posted.append(case_id)
         return "ann-" + case_id
-
-    def close_incident(self, case_id, subject, text="", status=5):
-        self.resolved.append(case_id)
-        return True
-
-    def advance_bpf_to_resolve(self, case_id):
-        self.bpf_advanced = getattr(self, "bpf_advanced", [])
-        self.bpf_advanced.append(case_id)
-        return True
 
 
 def _fake_proc(case, corpus):
@@ -536,105 +526,6 @@ def test_is_official_doc_filters_qa_and_forums():
     assert not is_official_doc("https://techcommunity.microsoft.com/t5/x")
     assert not is_official_doc("https://devblogs.microsoft.com/x")
     assert not is_official_doc("https://www.reddit.com/r/sysadmin/x")
-
-
-# --- Mitigation agent (auto-remediation) ------------------------------------
-def test_mitigation_matches_and_gate_passes():
-    from app.orchestrator.mitigation import assess
-    case = {"title": "User locked out", "description": "account locked, password reset, mfa stale"}
-    similar = [{"ticket_number": "CAS-01100", "display_score": 0.95}]
-    m = assess(case, similar, confidence=0.92)
-    assert m["matched"] and m["gate_passed"]
-    assert m["recipe_key"] == "account_lockout" and m["recipe_match"] == 1.0
-    # steps are shown plainly -- no misleading "done" tick (external steps aren't executed)
-    assert m["executed"] and all("✓" not in s for s in m["executed"])
-
-
-def test_mitigation_no_runbook_is_suggest_only():
-    from app.orchestrator.mitigation import assess
-    case = {"title": "Printer feeding multiple sheets and jamming", "description": "HR floor MFP"}
-    m = assess(case, [{"ticket_number": "X", "display_score": 0.9}], confidence=0.95)
-    assert not m["matched"] and not m["gate_passed"]
-
-
-def test_mitigation_novel_precedent_blocks_gate():
-    from app.orchestrator.mitigation import assess
-    case = {"title": "Account locked out", "description": "password reset needed"}
-    m = assess(case, [{"ticket_number": "X", "display_score": 0.5}], confidence=0.95)
-    assert m["matched"] and not m["gate_passed"] and "novel" in m["gate_reason"]
-
-
-def test_mitigation_low_confidence_blocks_gate():
-    from app.orchestrator.mitigation import assess
-    case = {"title": "Account locked out", "description": "password reset, mfa"}
-    m = assess(case, [{"ticket_number": "X", "display_score": 0.95}], confidence=0.6)
-    assert m["matched"] and not m["gate_passed"] and "confidence" in m["gate_reason"]
-
-
-# --- Safety net: verify -> revert -> kill switch ----------------------------
-
-def _gatecase(extra=""):
-    return {"id": "k", "ticket_number": "CAS-K",
-            "title": f"user is locked out{extra}", "description": "account locked, mfa"}
-
-
-def test_safety_verify_pass_auto_resolves():
-    from app.orchestrator.mitigation import assess, finalize_mitigation
-    from app.orchestrator import auto_safety
-    auto_safety.set_enabled(True)                          # clean slate
-    sim = [{"ticket_number": "CAS-1", "display_score": 0.95}]
-    m = finalize_mitigation(assess(_gatecase(), sim, 0.9), _gatecase())
-    assert m["gate_passed"] and m["auto_outcome"] == "auto_resolved"
-    assert m["should_close"] is True and m["verify_passed"] is True
-
-
-def test_safety_verify_fail_reverts_and_escalates():
-    from app.orchestrator.mitigation import assess, finalize_mitigation
-    from app.orchestrator import auto_safety
-    auto_safety.set_enabled(True)
-    case = _gatecase(" [demo-fail]")                       # force verify failure
-    sim = [{"ticket_number": "CAS-1", "display_score": 0.95}]
-    m = finalize_mitigation(assess(case, sim, 0.9), case)
-    assert m["auto_outcome"] == "reverted_escalated" and m["should_close"] is False
-    assert m["reverted"] is True and m.get("revert_executed")
-    auto_safety.set_enabled(True)                          # reset (a failure was recorded)
-
-
-def test_kill_switch_trips_after_threshold_then_auto_off():
-    from app.orchestrator import auto_safety
-    from app.orchestrator.mitigation import assess, finalize_mitigation
-    auto_safety.set_enabled(True)
-    assert auto_safety.is_enabled() is True
-    for _ in range(auto_safety.THRESHOLD):
-        auto_safety.record_failure("x")
-    assert auto_safety.is_enabled() is False               # tripped off
-    sim = [{"ticket_number": "CAS-1", "display_score": 0.95}]
-    m = finalize_mitigation(assess(_gatecase(), sim, 0.9), _gatecase())
-    assert m["auto_outcome"] == "auto_off" and m["should_close"] is False
-    auto_safety.set_enabled(True)                          # reset for other tests
-
-
-def test_poller_auto_resolves_when_gate_passed():
-    from app.orchestrator.d365_poller import poll_once
-    cases = [{"id": "9", "ticket_number": "CAS-9", "title": "locked out", "description": "x",
-              "created_on": "2026-06-11T10:00:00Z"}]
-    client = _FakeClient(cases)
-    adv = {"mitigation": {"gate_passed": True, "recipe_name": "Account Lockout",
-                          "recipe_key": "account_lockout", "confidence": 0.9,
-                          "precedent_match": 0.95, "resolution_text": "done"}}
-    processed, _ = poll_once(client, since="2026-06-11T09:00:00Z",
-                             process_fn=lambda case, corp: (adv, "note"))
-    assert processed == ["CAS-9"] and client.resolved == ["9"]   # auto-closed
-
-
-def test_poller_does_not_resolve_suggest_only():
-    from app.orchestrator.d365_poller import poll_once
-    cases = [{"id": "8", "ticket_number": "CAS-8", "title": "printer jam", "description": "x",
-              "created_on": "2026-06-11T10:00:00Z"}]
-    client = _FakeClient(cases)
-    processed, _ = poll_once(client, since="2026-06-11T09:00:00Z",
-                             process_fn=lambda case, corp: ({"mitigation": {"gate_passed": False}}, "note"))
-    assert processed == ["CAS-8"] and client.resolved == []      # suggest-only, not closed
 
 
 def test_d365_webhook_rejects_bad_secret():

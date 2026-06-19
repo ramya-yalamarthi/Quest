@@ -172,7 +172,7 @@ class D365CaseEvent(BaseModel):
 def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(default=None)):
     """Event-driven entry point: a new D365 Case fires this (via Power Automate),
     so the AI note appears in SECONDS instead of waiting for the ~2-min poller.
-    Runs the SAME pipeline + auto-remediation as the poller, and is idempotent
+    Runs the SAME analysis pipeline as the poller, and is idempotent
     (skips a Case that already has the AI note).
 
     Auth: if the WEBHOOK_SECRET env var is set, the caller MUST send the same
@@ -217,8 +217,6 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
             client.update_case_note(ann_id, note)  # fill in the placeholder
         else:
             client.create_case_note(case["id"], NOTE_SUBJECT, note)
-        from app.orchestrator.d365_poller import _auto_resolve
-        _auto_resolve(client, case, advisory)      # close it if the mitigation gate passed
         try:
             client.dedupe_case_notes(case["id"], NOTE_SUBJECT)  # backstop: collapse any race dup
         except Exception:
@@ -232,10 +230,8 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
         release(case["id"])                        # allow a retry on hard failure
         raise
 
-    mit = advisory.get("mitigation") or {}
     return {"status": "processed", "ticket": case["ticket_number"],
-            "engine": engine_name(),
-            "auto_resolved": bool(mit.get("gate_passed"))}
+            "engine": engine_name()}
 
 
 @router.post("/decision")
@@ -263,28 +259,6 @@ def get_state(ticket_id: str):
 def health():
     """Liveness check for your teammate / ServiceNow connectivity test."""
     return {"status": "ok", "service": "orchestrator"}
-
-
-class AutoMode(BaseModel):
-    enabled: bool = True
-
-
-@router.get("/auto-mode")
-def get_auto_mode():
-    """Status of the auto-remediation kill switch (enabled, recent failures, threshold)."""
-    from app.orchestrator import auto_safety
-    return auto_safety.status()
-
-
-@router.post("/auto-mode")
-def set_auto_mode(body: AutoMode, x_webhook_secret: Optional[str] = Header(default=None)):
-    """Human turns auto-remediation ON/OFF (and clears the failure window when ON).
-    Protected by WEBHOOK_SECRET if that env var is set."""
-    secret = os.getenv("WEBHOOK_SECRET")
-    if secret and x_webhook_secret != secret:
-        raise HTTPException(status_code=401, detail="invalid webhook secret")
-    from app.orchestrator import auto_safety
-    return auto_safety.set_enabled(body.enabled)
 
 
 @router.get("/recommendation", response_class=HTMLResponse)

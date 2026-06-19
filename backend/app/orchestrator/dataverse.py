@@ -27,17 +27,6 @@ from typing import Optional
 
 API_VERSION = "v9.2"
 
-# Phone to Case Process BPF (org-specific stage GUIDs) -- advance the process bar
-# to "Resolve" when the agent auto-resolves a Case, so the bar matches the
-# resolved status. Override via env if the org's process differs.
-BPF_RESOLVE_STAGE = os.getenv("BPF_RESOLVE_STAGE", "356ecd08-43c3-4585-ae94-6053984bc0a9")
-BPF_TRAVERSED_PATH = os.getenv(
-    "BPF_TRAVERSED_PATH",
-    "15322a8f-67b8-47fb-8763-13a28686c29d,"   # Identify
-    "92a6721b-d465-4d36-aef7-e8822d7a5a6a,"   # Research
-    "356ecd08-43c3-4585-ae94-6053984bc0a9",   # Resolve
-)
-
 
 def _env() -> Optional[dict]:
     base = os.getenv("DATAVERSE_URL")
@@ -266,9 +255,10 @@ class DataverseClient:
 
     def close_incident(self, case_id: str, subject: str, text: str = "",
                        status: int = 5) -> bool:
-        """Resolve + close a Case via the CloseIncident action (the genuinely
-        real auto-remediation action). Creates the incidentresolution activity
-        and flips the Case to Resolved (statecode 1). status 5 = 'Problem Solved'.
+        """Resolve + close a Case via the CloseIncident action. Used to seed the
+        similarity corpus with RESOLVED cases (see scripts/import_github_issues.py).
+        Creates the incidentresolution activity and flips the Case to Resolved
+        (statecode 1). status 5 = 'Problem Solved'.
 
         Returns True on success, False if the Case is already resolved (so a
         race can't create a second resolution). Raises on hard failure.
@@ -288,26 +278,4 @@ class DataverseClient:
             "Status": status,
         }
         self._request("POST", "CloseIncident", body)
-        return True
-
-    def advance_bpf_to_resolve(self, case_id: str) -> bool:
-        """Advance the Phone-to-Case business process flow to its Resolve stage so
-        the process bar matches the auto-resolved status. Best-effort: returns
-        False if the Case has no BPF instance; raises only on hard HTTP failure
-        (caller logs). MUST be called BEFORE close_incident -- a resolved Case is
-        read-only."""
-        params = urllib.parse.urlencode({
-            "$select": "businessprocessflowinstanceid",
-            "$filter": f"_incidentid_value eq {case_id}",
-            "$top": "1",
-        })
-        data = self._request("GET", "phonetocaseprocesses?" + params) or {}
-        rows = data.get("value") or []
-        if not rows:
-            return False
-        inst = rows[0]["businessprocessflowinstanceid"]
-        self._request("PATCH", f"phonetocaseprocesses({inst})", {
-            "activestageid@odata.bind": f"/processstages({BPF_RESOLVE_STAGE})",
-            "traversedpath": BPF_TRAVERSED_PATH,
-        })
         return True
