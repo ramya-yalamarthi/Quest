@@ -264,9 +264,11 @@ class DataverseClient:
         return rows[0]["queueid"] if rows else None
 
     def set_case_queue(self, case_id: str, queue_id: str) -> None:
-        """Move a Case into a queue (sets incidents.queueid)."""
-        self._request("PATCH", f"incidents({case_id})",
-                      {"queueid@odata.bind": f"/queues({queue_id})"})
+        """Move a Case into a queue. Incidents have no direct queue lookup field
+        -- Dataverse tracks queue membership via a queueitem row, created by the
+        bound AddToQueue action on the queue itself."""
+        body = {"Target": {"@odata.type": "Microsoft.Dynamics.CRM.incident", "incidentid": case_id}}
+        self._request("POST", f"queues({queue_id})/Microsoft.Dynamics.CRM.AddToQueue", body)
 
     def close_incident(self, case_id: str, subject: str, text: str = "",
                        status: int = 5) -> bool:
