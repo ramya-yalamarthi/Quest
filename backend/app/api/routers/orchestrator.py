@@ -219,6 +219,9 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
             client.create_case_note(case["id"], NOTE_SUBJECT, note)
         from app.orchestrator.notify import notify_assigned_engineer
         notify_assigned_engineer(advisory, case)   # best-effort; never blocks the case
+        from app.orchestrator.queues import move_case_to_queue
+        team = (advisory.get("routing") or {}).get("recommended_team", "")
+        move_case_to_queue(client, case["id"], team)  # best-effort; never blocks the case
         try:
             client.dedupe_case_notes(case["id"], NOTE_SUBJECT)  # backstop: collapse any race dup
         except Exception:

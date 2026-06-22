@@ -253,6 +253,21 @@ class DataverseClient:
                 pass
         return deleted
 
+    # -- queues -------------------------------------------------------------
+    def get_queue_id(self, name: str) -> Optional[str]:
+        """Look up a Queue's id by its exact Name (e.g. 'Software Queue')."""
+        n = name.replace("'", "''")
+        params = urllib.parse.urlencode({
+            "$select": "queueid", "$top": "1", "$filter": f"name eq '{n}'",
+        })
+        rows = (self._request("GET", "queues?" + params) or {}).get("value", [])
+        return rows[0]["queueid"] if rows else None
+
+    def set_case_queue(self, case_id: str, queue_id: str) -> None:
+        """Move a Case into a queue (sets incidents.queueid)."""
+        self._request("PATCH", f"incidents({case_id})",
+                      {"queueid@odata.bind": f"/queues({queue_id})"})
+
     def close_incident(self, case_id: str, subject: str, text: str = "",
                        status: int = 5) -> bool:
         """Resolve + close a Case via the CloseIncident action. Used to seed the
