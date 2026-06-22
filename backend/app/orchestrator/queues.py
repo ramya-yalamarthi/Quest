@@ -23,8 +23,8 @@ _NETWORK_TEAMS = {"Networking"}
 
 QUEUE_NAMES = {
     "Software": os.getenv("SOFTWARE_QUEUE_NAME", "Software Queue"),
-    "Hardware": os.getenv("HARDWARE_QUEUE_NAME", "Hardware Queue"),
-    "Network": os.getenv("NETWORK_QUEUE_NAME", "Network Queue"),
+    "Hardware": os.getenv("HARDWARE_QUEUE_NAME", "Hardware"),
+    "Network": os.getenv("NETWORK_QUEUE_NAME", "Network"),
 }
 
 
