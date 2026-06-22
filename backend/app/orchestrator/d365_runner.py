@@ -110,6 +110,11 @@ def format_note(advisory: dict) -> str:
         P.append(f"• Assigned team: {_esc(team)}")
     if r.get("reason"):
         P.append(f"• Why this team: {_esc(r.get('reason'))}")
+    eng = r.get("assigned_engineer")
+    if eng:
+        P.append(f"• Assigned engineer: {_esc(eng.get('name'))} ({_esc(eng.get('email'))})")
+        if eng.get("reason"):
+            P.append(f"• Why this engineer: {_esc(eng.get('reason'))}")
     P.append("")
 
     P.append(f"<b>DIAGNOSIS</b> &nbsp;·&nbsp; Confidence: {_pct(d.get('confidence'))}")

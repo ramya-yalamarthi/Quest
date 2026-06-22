@@ -217,6 +217,8 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
             client.update_case_note(ann_id, note)  # fill in the placeholder
         else:
             client.create_case_note(case["id"], NOTE_SUBJECT, note)
+        from app.orchestrator.notify import notify_assigned_engineer
+        notify_assigned_engineer(advisory, case)   # best-effort; never blocks the case
         try:
             client.dedupe_case_notes(case["id"], NOTE_SUBJECT)  # backstop: collapse any race dup
         except Exception:

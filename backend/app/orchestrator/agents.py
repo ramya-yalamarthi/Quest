@@ -69,18 +69,25 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 # Routing Agent -- which team/queue should own this case?
 # ---------------------------------------------------------------------------
 _ROUTING_SYSTEM = (
-    "You are a support TRIAGE assistant. Classify the case into EXACTLY ONE of these five "
-    "categories, based ONLY on the case content -- choose the single best fit:\n"
-    "- Software: applications, OS, Office/Outlook/Teams, licensing, updates, crashes, SaaS apps\n"
-    "- Hardware: laptops, desktops, peripherals, printers, monitors, docking, physical devices\n"
-    "- Network: connectivity, VPN, Wi-Fi, DNS, firewall, switches, ISP, routing, packet loss\n"
-    "- Database: SQL/Dataverse data, queries, backups, replication, data loss, deadlocks, jobs\n"
-    "- General: accounts/access, password/MFA/lockouts, onboarding/offboarding, email/DLs, "
-    "phishing, purchase/access requests, and anything not clearly in the four above\n"
-    "Use ONLY one of: Software, Hardware, Network, Database, General. "
+    "You are a Kubernetes/Karpenter support TRIAGE assistant. Classify the case into EXACTLY "
+    "ONE of these categories, based ONLY on the case content -- choose the single best fit:\n"
+    "- Provisioning / scheduling: node/pod provisioning, scheduling, NodePool, pending pods\n"
+    "- Autoscaling / scaling: autoscaling, scale-up/scale-down, capacity decisions\n"
+    "- Consolidation / disruption: consolidation, disruption budgets, drift\n"
+    "- Metrics / observability: metrics, controller logs, observability gaps\n"
+    "- Termination / eviction: node/pod termination, eviction, draining, NodeClaim lifecycle\n"
+    "- Instance types / pricing: instance type selection, GPU, spot, pricing/cost estimation\n"
+    "- Config / API (EC2NodeClass): EC2NodeClass, subnet, IAM, AMI, AWS-specific config/API\n"
+    "- Networking: DNS, VPC, TLS, connectivity\n"
+    "- Docs: documentation issues/requests\n"
+    "- Other: anything not clearly in the categories above\n"
+    "Use ONLY one of: Provisioning / scheduling, Autoscaling / scaling, Consolidation / "
+    "disruption, Metrics / observability, Termination / eviction, Instance types / pricing, "
+    "Config / API (EC2NodeClass), Networking, Docs, Other. "
     "Also rate your confidence in the team from 0.0 to 1.0 (1.0 = certain), and give a "
     "ONE short sentence reason citing the specific signals in the case that point to that team. "
-    'Respond ONLY as JSON: {"recommended_team": "Network", "confidence": 0.0, "reason": "<one sentence>"}.'
+    'Respond ONLY as JSON: {"recommended_team": "Provisioning / scheduling", "confidence": 0.0, '
+    '"reason": "<one sentence>"}.'
 )
 
 
@@ -91,16 +98,21 @@ class RoutingAgent:
         title, desc, assigned = _ticket_fields(context)
         result = chat_json(_ROUTING_SYSTEM,
                            f"Case title: {title}\nDescription: {desc}" + _feedback_note(context))
-        rec = str((result or {}).get("recommended_team", "")).strip() or "General"
+        rec = str((result or {}).get("recommended_team", "")).strip() or "Other"
         conf = _clamp(float((result or {}).get("confidence", 0.7) or 0.7), 0.0, 1.0)
         reason = str((result or {}).get("reason", "")).strip()
         assigned_norm = (assigned or "").strip()
         correct = None
         if assigned_norm and assigned_norm.lower() not in ("unassigned", "unknown", ""):
             correct = assigned_norm.lower() == rec.lower()
+
+        from app.orchestrator.roster import assign_engineer
+        engineer = assign_engineer(rec, title, desc)
+
         return {
             "assigned_team": assigned_norm or "Unassigned",
             "assignment_correct": correct,            # True / False / None (no team yet)
+            "assigned_engineer": engineer,             # {name, email, region, specialty, reason} or None
             "recommended_team": rec,
             "confidence": conf,
             "reason": reason,

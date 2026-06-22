@@ -10,3 +10,5 @@ redis>=5.0.0
 python-dotenv==1.2.1
 openai>=1.40.0  # real Routing agent (gpt-4o via Azure OpenAI)
 mcp>=1.2.0     # MCP engine (ENGINE=mcp): reasoning driven via the MCP tool boundary
+openpyxl>=3.1.0  # reads app/data/engineer_roster.xlsx for engineer assignment
+sendgrid==6.11.0  # assignment notification emails

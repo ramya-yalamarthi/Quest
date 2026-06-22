@@ -32,3 +32,4 @@ ddgs>=0.3.0  # reliable web search (renamed from duckduckgo-search)
 requests>=2.31.0  # HTTP client for API calls
 redis>=5.0.0  # orchestrator state store + event dedupe + context cache (Day 4)
 mcp[cli]>=1.2.0  # MCP layer (Phase 1) -- local/dev only; NOT in the slim Render deploy
+openpyxl>=3.1.0  # reads backend/data/engineer_roster.xlsx for engineer assignment
