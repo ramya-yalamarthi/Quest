@@ -173,14 +173,23 @@ def assign_engineer(
     on_shift = [e for e in roster if is_on_shift(e, now_utc)]
     on_call = [e for e in roster if e["on_call"]]
 
+    shift_result = _best_match(on_shift, team, text) if on_shift else (None, 0, False)
+    call_result = _best_match(on_call, team, text) if on_call else (None, 0, False)
+
     sla_risk = False
-    if on_shift:
-        candidates, team_score, matched = _best_match(on_shift, team, text)
+    if shift_result[2]:                              # tier 1: on-shift + real skill match
+        candidates, team_score, matched = shift_result
         availability = "on shift right now"
-    elif on_call:
-        candidates, team_score, matched = _best_match(on_call, team, text)
+    elif call_result[2]:                              # tier 2: on-call + real skill match
+        candidates, team_score, matched = call_result
         availability = "off-shift, reached via on-call"
-    else:
+    elif on_shift:                                     # tier 3: on-shift, best-effort (no match anywhere)
+        candidates, team_score, matched = shift_result
+        availability = "on shift right now"
+    elif on_call:                                      # tier 4: on-call, best-effort
+        candidates, team_score, matched = call_result
+        availability = "off-shift, reached via on-call"
+    else:                                              # tier 5: nobody on-shift or on-call at all
         candidates, team_score, matched = _best_match(roster, team, text)
         availability = "no on-shift or on-call coverage found"
         sla_risk = True
