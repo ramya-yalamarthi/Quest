@@ -17,6 +17,8 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 
+from app.orchestrator.queues import QUEUE_NAMES, domain_for_team
+
 log = logging.getLogger(__name__)
 
 
@@ -27,6 +29,7 @@ def _build_message(advisory: dict, case: dict) -> tuple[dict, str, str]:
         return {}, "", ""
 
     team = ((advisory or {}).get("routing") or {}).get("recommended_team", "")
+    queue_name = QUEUE_NAMES[domain_for_team(team)]
     title = case.get("title", "(no title)")
     number = case.get("ticket_number") or case.get("id") or ""
     root_cause = ((advisory or {}).get("diagnosis") or {}).get("root_cause", "")
@@ -38,6 +41,7 @@ def _build_message(advisory: dict, case: dict) -> tuple[dict, str, str]:
         f"Case: {number}\n"
         f"Title: {title}\n"
         f"Team: {team}\n"
+        f"Queue: {queue_name}\n"
         f"Why you: {engineer.get('reason', '')}\n"
     )
     if root_cause:
