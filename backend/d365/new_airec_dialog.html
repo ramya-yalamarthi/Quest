@@ -80,49 +80,85 @@
       });
     }
 
-    function fbPanel() {
-      var p = document.getElementById("fb-panel");
-      if (!p) {
-        p = document.createElement("div");
-        p.id = "fb-panel";
-        p.style.marginTop = "10px";
-        document.getElementById("content").appendChild(p);
-      }
-      return p;
+    var LIKE_REASONS = [
+      "Correct root cause identified",
+      "Right engineer assigned",
+      "The fix actually worked",
+      "Saved me time",
+      "Other",
+    ];
+    var DISLIKE_REASONS = [
+      "Wrong team / category",
+      "Wrong engineer assigned",
+      "Root cause was incorrect",
+      "The fix didn't help",
+      "Other",
+    ];
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function feedbackUrl(isLike) {
+      return BACKEND.replace("/recommendation", "/feedback") +
+             "?case=" + encodeURIComponent(getCaseId()) + "&v=" + (isLike ? "like" : "dislike");
+    }
+
+    // Replaces the AI analysis card with the survey -- same popup, same spot,
+    // matching the "Was this page helpful?" pattern (Yes/No + reasons + comment).
+    function showFeedbackSurvey(isLike) {
+      var reasons = isLike ? LIKE_REASONS : DISLIKE_REASONS;
+      var el = document.getElementById("content");
+      var checks = reasons.map(function (r, i) {
+        return '<label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;cursor:pointer">' +
+               '<input type="checkbox" class="fb-reason" value="' + escapeHtml(r) + '" id="fb-r' + i + '"> ' +
+               escapeHtml(r) + '</label>';
+      }).join("");
+      el.innerHTML =
+        '<div style="font-size:16px;font-weight:600;color:#0f3d6e;margin-bottom:14px">Was this recommendation helpful?</div>' +
+        '<div style="margin-bottom:16px">' +
+          '<button id="fb-yes" style="margin-right:8px;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:13px;' +
+          'border:1px solid ' + (isLike ? '#0078d4;background:#e8f1fb;color:#0078d4' : '#c8c6c4;background:#fff;color:#201f1e') + '">👍 Yes</button>' +
+          '<button id="fb-no" style="padding:6px 16px;border-radius:4px;cursor:pointer;font-size:13px;' +
+          'border:1px solid ' + (!isLike ? '#0078d4;background:#e8f1fb;color:#0078d4' : '#c8c6c4;background:#fff;color:#201f1e') + '">👎 No</button>' +
+        '</div>' +
+        '<div style="font-size:14px;font-weight:600;margin-bottom:8px">What is the reason for your feedback?</div>' +
+        '<div style="margin-bottom:14px">' + checks + '</div>' +
+        '<div style="font-size:13px;color:#605e5c;margin-bottom:6px">Tell us more (optional):</div>' +
+        '<textarea id="fb-comment" style="width:100%;box-sizing:border-box;min-height:64px;' +
+        'border:1px solid #c8c6c4;border-radius:6px;padding:8px;font-family:inherit;font-size:13px;margin-bottom:12px"></textarea>' +
+        '<button id="fb-submit" style="background:#0078d4;color:#fff;border:none;border-radius:4px;' +
+        'padding:7px 20px;cursor:pointer;font-size:13px">Submit</button>';
+
+      document.getElementById("fb-yes").addEventListener("click", function () { showFeedbackSurvey(true); });
+      document.getElementById("fb-no").addEventListener("click", function () { showFeedbackSurvey(false); });
+      document.getElementById("fb-submit").addEventListener("click", function () {
+        var picked = Array.prototype.slice.call(document.querySelectorAll(".fb-reason:checked"))
+                          .map(function (c) { return c.value; });
+        var freeText = (document.getElementById("fb-comment").value || "").trim();
+        var comment = picked.concat(freeText ? [freeText] : []).join(" | ");
+        submitFeedback(feedbackUrl(isLike), comment, isLike);
+      });
     }
 
     function onFeedbackClick(a) {
       if (fbDone) return;
-      var url = a.href;
-      if (/[?&]v=like(\b|&|$)/.test(url)) {           // 👍 -> submit straight away
-        submitFeedback(url, "");
-        return;
-      }
-      // 👎 -> reveal a comment box + Send right below the buttons
-      var p = fbPanel();
-      p.innerHTML =
-        '<div style="font-size:13px;color:#605e5c;margin-bottom:4px">Tell us what went wrong (optional):</div>' +
-        '<textarea id="fb-comment" style="width:100%;box-sizing:border-box;min-height:64px;' +
-        'border:1px solid #c8c6c4;border-radius:6px;padding:8px;font-family:inherit;font-size:13px"></textarea>' +
-        '<div style="margin-top:6px"><button id="fb-send" style="background:#0078d4;color:#fff;' +
-        'border:none;border-radius:4px;padding:6px 18px;cursor:pointer;font-size:13px">Send</button></div>';
-      var ta = document.getElementById("fb-comment");
-      if (ta) ta.focus();
-      document.getElementById("fb-send").addEventListener("click", function () {
-        submitFeedback(url, (document.getElementById("fb-comment").value || "").trim());
-      });
+      var isLike = /[?&]v=like(\b|&|$)/.test(a.href);
+      showFeedbackSurvey(isLike);
     }
 
-    function submitFeedback(url, comment) {
+    function submitFeedback(url, comment, isLike) {
       fbDone = true;
       // Record the 👍/👎 (and comment) on the case, fire-and-forget.
       try { fetch(url + "&comment=" + encodeURIComponent(comment)).catch(function () {}); } catch (e) {}
 
-      // 👍 with no comment -> just confirm. Otherwise regenerate a better answer.
-      var isLike = /[?&]v=like(\b|&|$)/.test(url);
-      if (isLike && !comment) {
-        fbPanel().innerHTML =
-          '<div style="color:#107c10;font-size:13px">✓ Thanks for your feedback!</div>';
+      // 👍 -> just confirm, in the same popup. 👎 -> regenerate a better answer.
+      if (isLike) {
+        document.getElementById("content").innerHTML =
+          '<div style="text-align:center;padding:24px 0">' +
+          '<div style="font-size:40px;margin-bottom:8px">👍</div>' +
+          '<div style="color:#107c10;font-size:15px;font-weight:600">Thanks for your feedback!</div>' +
+          '</div>';
         return;
       }
 
