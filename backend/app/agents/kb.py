@@ -49,7 +49,10 @@ def match_kb_articles(
 
     out = []
     for a, sim in top:
-        workflow = find_workflow(a.title, a.category, a.summary)
+        # Match on category ONLY (not title/summary) -- those often mention
+        # adjacent terms in passing (e.g. a DNS article referencing
+        # "NodePool"), which caused false "Workflow available" tags.
+        workflow = find_workflow(a.category)
         out.append({
             "kb_id": str(a.kb_id), "title": a.title, "url": a.url, "summary": a.summary,
             "category": a.category, "similarity": round(sim, 4),
