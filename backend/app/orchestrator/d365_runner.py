@@ -114,22 +114,45 @@ def _historical_routing_match(team: str, matches: list) -> Optional[dict]:
 # never auto-run. Keep this conservative: only suggest when the signal is
 # clear, since a wrong suggestion erodes trust faster than no suggestion.
 _WORKFLOW_SUGGESTIONS = (
-    (("quota", "capacity", "instance types", "pricing"),
-     "Increase NodePool/instance-type quota or capacity allocation"),
-    (("autoscaling", "scale-up", "scale down", "scaling"),
-     "Trigger an autoscaling policy review / scale-up workflow"),
-    (("pending", "provisioning", "nodepool", "scheduling"),
-     "Run a NodePool provisioning health-check workflow"),
+    (("quota", "capacity", "instance types", "pricing"), {
+        "title": "Increase NodePool/instance-type quota or capacity allocation",
+        "steps": [
+            "Check current quota/limits for the affected instance type (cloud console or NodePool spec).",
+            "Raise the NodePool's instance-type/capacity limit to cover the shortfall.",
+            "Apply the updated NodePool configuration.",
+            "Confirm Karpenter provisions new nodes and the pending pods schedule.",
+        ],
+    }),
+    (("autoscaling", "scale-up", "scale down", "scaling"), {
+        "title": "Review/trigger an autoscaling policy adjustment",
+        "steps": [
+            "Check the autoscaler logs for recent scale-up/scale-down decisions.",
+            "Review the policy thresholds (min/max nodes, scale-down delay).",
+            "Adjust the thresholds if scaling is too conservative for current load.",
+            "Trigger a manual scale-up if pods are pending on insufficient nodes.",
+        ],
+    }),
+    (("pending", "provisioning", "nodepool", "scheduling"), {
+        "title": "Run a NodePool provisioning health-check",
+        "steps": [
+            "Verify the Karpenter controller is running and healthy.",
+            "Check the NodePool/EC2NodeClass status for errors.",
+            "Confirm cloud-provider service quotas aren't blocking provisioning.",
+            "Re-trigger provisioning once the blocker is cleared and confirm pods schedule.",
+        ],
+    }),
 )
 
 
-def _suggested_workflow(team: str, root_cause: str, ticket_text: str = "") -> Optional[str]:
-    """A workflow suggestion grounded in the routed team + root cause +
-    ticket text -- None (no filler) if nothing clearly points to one."""
+def _suggested_workflow(team: str, root_cause: str, ticket_text: str = "") -> Optional[dict]:
+    """A concrete workflow -- title + steps -- grounded in the routed team +
+    root cause + ticket text. None (no filler) if nothing clearly points to
+    one. These are steps for a human to RUN, not something this app executes;
+    there's no API/Power Automate wiring behind this yet."""
     text = f"{team} {root_cause} {ticket_text}".lower()
-    for keywords, suggestion in _WORKFLOW_SUGGESTIONS:
+    for keywords, workflow in _WORKFLOW_SUGGESTIONS:
         if any(k in text for k in keywords):
-            return suggestion
+            return workflow
     return None
 
 
@@ -261,8 +284,9 @@ def format_note(advisory: dict) -> str:
 
     workflow = advisory.get("suggested_workflow")
     if workflow:
-        P.append("<b>SUGGESTED WORKFLOW</b> &nbsp;·&nbsp; NOT executed — requires manager approval")
-        P.append(f"• {_esc(workflow)}")
+        P.append(f"<b>SUGGESTED WORKFLOW</b> &nbsp;·&nbsp; {_esc(workflow['title'])}")
+        for i, step in enumerate(workflow.get("steps") or [], 1):
+            P.append(f"&nbsp;&nbsp;{i}. {_esc(step)}")
         P.append("")
 
     like = advisory.get("feedback_like_url")
