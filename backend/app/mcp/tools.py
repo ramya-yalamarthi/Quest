@@ -50,7 +50,7 @@ def create_ticket(db: Session, *, title: str, description: str, created_by_user_
     insights = InsightsBuddy(db)
     analysis = insights.analyse_ticket(t.ticket_id)
 
-    # Store similar tickets as JSON in outcome column
+    # Store similar tickets + matched KB articles as JSON in outcome column
     outcome_value = [
         {
             "ticket_id": sim_ticket["ticket_id"],
@@ -59,6 +59,9 @@ def create_ticket(db: Session, *, title: str, description: str, created_by_user_
         }
         for sim_ticket in analysis["similar_tickets"]
     ]
+    kb_recommendations = analysis.get("kb_recommendations", [])
+    if kb_recommendations:
+        outcome_value = [{"kb_recommendations": kb_recommendations}] + outcome_value
 
     # Use actual recommended steps and reasoning from InsightsBuddy
     recommendedsteps_list = analysis.get("recommended_steps", [])

@@ -4,3 +4,6 @@ from app.db.models.email import Email  # noqa: F401
 from app.db.models.resolution import Resolution  # noqa: F401
 from app.db.models.ai_audit_log import AiAuditLog  # noqa: F401
 from app.db.models.recommendation_feedback import RecommendationFeedback  # noqa: F401
+from app.db.models.kb_article import KBArticle  # noqa: F401
+from app.db.models.ticket_kb_mapping import TicketKBMapping  # noqa: F401
+from app.db.models.kb_feedback import KBFeedback  # noqa: F401

@@ -320,6 +320,18 @@ class InsightsBuddy:
             root_cause, recommendation = summarize_root_cause_with_llm(
                 ticket_text, historical_snippets
             )
+
+            if progress:
+                progress("Matching KB articles")
+            from app.agents.kb import match_kb_articles, record_kb_mapping
+            try:
+                kb_recommendations = match_kb_articles(self.db, ticket.title, ticket.description)
+                for kb in kb_recommendations:
+                    record_kb_mapping(self.db, ticket.ticket_id, kb["kb_id"], kb["similarity"])
+            except Exception:
+                self._logger.warning("KB matching failed; continuing without KB recommendations", exc_info=True)
+                kb_recommendations = []
+
             return {
                 "ticket_id": str(ticket.ticket_id),
                 "ticket": ticket,
@@ -328,6 +340,7 @@ class InsightsBuddy:
                 "root_cause": root_cause,
                 "recommendation": recommendation,
                 "recommended_steps": filtered_steps,
+                "kb_recommendations": kb_recommendations,
                 # "web_solutions": web_solutions,
             }
 

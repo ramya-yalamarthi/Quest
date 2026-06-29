@@ -8,6 +8,8 @@ from app.api.routers.resolutions import router as resolutions_router
 from app.api.routers.mcp import router as mcp_router
 from app.api.routers.users import router as users_router
 from app.api.routers.orchestrator import router as orchestrator_router
+from app.api.routers.kb import router as kb_router
+from app.api.routers.manager import router as manager_router
 
 def create_app() -> FastAPI:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -28,6 +30,8 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router)
     app.include_router(users_router)
     app.include_router(orchestrator_router)
+    app.include_router(kb_router)
+    app.include_router(manager_router)
 
     return app
 

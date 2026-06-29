@@ -70,6 +70,9 @@ def load_roster() -> list[dict]:
         "specialty": col("specialty"), "skills": col("k8s skills"),
         "seniority": col("seniority"), "capacity": col("capacity"),
         "load": col("load"), "on_call": col("on-call"),
+        # Track record columns are optional -- ops-maintained, no migration needed.
+        # Missing/blank -> None so the UI can say "no history yet" instead of 0.
+        "resolved_count": col("resolved count"), "avg_resolution_hrs": col("avg resolution (hrs)"),
     }
     out = []
     for r in rows[1:]:
@@ -80,6 +83,8 @@ def load_roster() -> list[dict]:
             i = idx[key]
             return r[i] if i is not None and i < len(r) else default
 
+        resolved_count = get("resolved_count")
+        avg_resolution_hrs = get("avg_resolution_hrs")
         out.append({
             "name": get("name", ""),
             "email": get("email", ""),
@@ -92,6 +97,8 @@ def load_roster() -> list[dict]:
             "capacity": int(get("capacity", 0) or 0),
             "load": int(get("load", 0) or 0),
             "on_call": str(get("on_call", "")).strip().lower() == "yes",
+            "resolved_count": int(resolved_count) if resolved_count not in (None, "") else None,
+            "avg_resolution_hrs": float(avg_resolution_hrs) if avg_resolution_hrs not in (None, "") else None,
         })
     return out
 
@@ -122,6 +129,26 @@ def is_on_shift(engineer: dict, now_utc: Optional[datetime] = None) -> bool:
     if start <= end:
         return start <= now_min < end
     return now_min >= start or now_min < end  # overnight shift (e.g. 22:00-06:00)
+
+
+# Below this many remaining minutes in the shift, flag the assignment as a
+# handoff risk -- the ticket may outlive the assignee's shift.
+LOW_SHIFT_REMAINING_MIN = 60
+
+
+def remaining_shift_minutes(engineer: dict, now_utc: Optional[datetime] = None) -> Optional[int]:
+    """Minutes left in `engineer`'s CURRENT shift, in their own timezone.
+    None if they're not on shift right now, or timezone/hours are unparsable."""
+    if not is_on_shift(engineer, now_utc):
+        return None
+    tz_name, hours = engineer.get("timezone"), engineer.get("shift_hours")
+    local_now = (now_utc or datetime.now(dt_timezone.utc)).astimezone(ZoneInfo(tz_name))
+    start_s, end_s = hours.split("-", 1)
+    start, end = _parse_minutes(start_s), _parse_minutes(end_s)
+    now_min = local_now.hour * 60 + local_now.minute
+    if start <= end:                  # same-day shift
+        return end - now_min
+    return (end - now_min) if now_min < end else (end + 1440 - now_min)  # overnight wrap
 
 
 def _score(engineer: dict, team: str, text: str) -> tuple[int, int]:
@@ -197,8 +224,18 @@ def assign_engineer(
     def spare(e):
         return e["capacity"] - e["load"]
 
-    candidates.sort(key=lambda e: (-spare(e), not e["on_call"], -{"L3": 3, "L2": 2, "L1": 1}.get(e["seniority"], 0)))
+    # Remaining shift time as a tiebreaker: among equally-loaded candidates,
+    # prefer whoever has the most time left before going off-shift, so a
+    # ticket isn't handed off mid-resolution. on-call candidates (no active
+    # shift clock) sort neutrally -- not penalized for having "no remaining time".
+    def remaining(e):
+        m = remaining_shift_minutes(e, now_utc)
+        return m if m is not None else 1 << 30
+
+    candidates.sort(key=lambda e: (-spare(e), -remaining(e), not e["on_call"],
+                                    -{"L3": 3, "L2": 2, "L1": 1}.get(e["seniority"], 0)))
     chosen = candidates[0]
+    chosen_remaining = remaining_shift_minutes(chosen, now_utc)
 
     if team_score > 0:
         reason = f"Specialty match for '{team}'"
@@ -208,10 +245,25 @@ def assign_engineer(
         reason = f"No specialist found for '{team}'"
     reason += f"; {availability}"
     reason += f"; spare capacity {spare(chosen)} ({chosen['load']}/{chosen['capacity']})"
+    if chosen_remaining is not None:
+        reason += f"; {chosen_remaining / 60:.1f}h left in shift"
+        if chosen_remaining < LOW_SHIFT_REMAINING_MIN:
+            reason += " · ⚠ HANDOFF RISK — shift ending soon"
     if sla_risk:
         reason += " · ⚠ SLA RISK — no specialist currently working or on-call"
+
+    resolved_count = chosen.get("resolved_count")
+    avg_resolution_hrs = chosen.get("avg_resolution_hrs")
+    track_record = None
+    if resolved_count is not None:
+        track_record = f"{resolved_count} similar tickets solved"
+        if avg_resolution_hrs is not None:
+            track_record += f", avg resolution {avg_resolution_hrs:g}h"
 
     return {
         "name": chosen["name"], "email": chosen["email"], "region": chosen["region"],
         "specialty": chosen["specialty"], "reason": reason, "sla_risk": sla_risk,
+        "resolved_count": resolved_count, "avg_resolution_hrs": avg_resolution_hrs,
+        "track_record": track_record, "remaining_shift_minutes": chosen_remaining,
+        "handoff_risk": chosen_remaining is not None and chosen_remaining < LOW_SHIFT_REMAINING_MIN,
     }
