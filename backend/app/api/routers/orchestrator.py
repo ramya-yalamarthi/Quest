@@ -129,31 +129,6 @@ def _live_link_stats(ticket_id: str, links: list) -> list:
             db.close()
 
 
-def _live_kb_recommendations(ticket_id: str, title: str, description: str, top_k: int = 3) -> list:
-    """DB-backed KB article matches (the ops-curated catalog, matched by
-    embedding similarity) for the rich popup's Knowledge Base Recommendations
-    cards. Fully optional -- any failure returns []."""
-    try:
-        from uuid import UUID
-        from app.db.session import SessionLocal
-        from app.agents.kb import match_kb_articles, record_kb_mapping
-        tid = UUID(str(ticket_id))
-    except Exception:
-        return []
-    db = None
-    try:
-        db = SessionLocal()
-        matches = match_kb_articles(db, title, description, top_k=top_k)
-        for m in matches:
-            record_kb_mapping(db, tid, m["kb_id"], m["similarity"])
-        return matches
-    except Exception:
-        return []
-    finally:
-        if db is not None:
-            db.close()
-
-
 # One supervisor for the app: state store is shared (Redis/in-memory),
 # audit goes to Postgres ai_audit_log via the existing SessionLocal pattern.
 _orchestrator = Orchestrator(
@@ -429,9 +404,6 @@ def get_recommendation_data(case: str):
     r = advisory.get("routing") or {}
     d = advisory.get("diagnosis") or {}
     eng = r.get("assigned_engineer") or {}
-    kb_recs = _live_kb_recommendations(case, target.get("title", ""), target.get("description", ""))
-    if kb_recs:
-        kb_recs[0] = {**kb_recs[0], "top_pick": True}
 
     return {
         "case": {"id": target.get("id"), "ticket_number": target.get("ticket_number"), "title": target.get("title")},
@@ -444,7 +416,6 @@ def get_recommendation_data(case: str):
             "grounded": d.get("grounded", True),
             "pattern_detected": d.get("pattern_detected"),
         },
-        "knowledge_base_recommendations": kb_recs,
         "recommended_assignment": {
             "team": r.get("recommended_team"), "team_confidence": r.get("confidence"),
             "engineer": eng or None,

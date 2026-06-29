@@ -47,16 +47,6 @@
     .bullet-text { font-size: 13.5px; color: #374151; }
     .pattern-box { background: #eff6ff; border-left: 3px solid #2563eb; border-radius: 6px; padding: 10px 12px; font-size: 13px; color: #1e3a8a; margin-top: 4px; }
 
-    .kb-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
-    .kb-card .kb-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-    .kb-title { font-weight: 600; font-size: 13.5px; color: #0078d4; cursor: pointer; }
-    .kb-stats { display: flex; gap: 14px; align-items: center; font-size: 12px; color: #6b7280; flex-wrap: wrap; }
-    .kb-badge { cursor: default; }
-    .kb-badge.clickable { cursor: pointer; }
-    .kb-steps { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb; font-size: 12.5px; color: #374151; }
-    .kb-steps ol { margin: 0; padding-left: 18px; }
-    .kb-steps li { margin-bottom: 4px; }
-
     .assign-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
     .assign-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
     .assign-avatar { width: 36px; height: 36px; border-radius: 50%; background: #0f3d6e; color: #fff; display: flex;
@@ -141,23 +131,6 @@
       return '<div class="trend-detail">' + rows + '</div>';
     }
 
-    function kbCardHtml(kb, idx) {
-      var badge = kb.workflow_available
-        ? '<span class="pill pill-green kb-badge clickable" data-kb-toggle="' + idx + '">&#9654; Workflow available</span>'
-        : '<span class="pill pill-gray kb-badge">&#128203; Manual only</span>';
-      var topPick = kb.top_pick ? '<span class="pill pill-blue">Top pick</span>' : "";
-      var resolved = pct(kb.success_rate);
-      var avg = kb.avg_resolution_hours;
-      var stats = (resolved !== null ? '&#128202; ' + resolved + '% resolved' : '&#128202; no data yet') +
-                  (avg ? ' &nbsp;&middot;&nbsp; &#128338; ~' + (avg < 1 ? Math.round(avg * 60) + ' min' : avg.toFixed(1) + 'h') + ' avg' : '');
-      var steps = (kb.workflow_steps || []).map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join("");
-      return '<div class="kb-card">' +
-        '<div class="kb-top"><span class="kb-title" data-kb-link="' + escapeHtml(kb.url || "") + '">' + escapeHtml(kb.title) + '</span>' + topPick + '</div>' +
-        '<div class="kb-stats">' + stats + badge + '</div>' +
-        '<div class="kb-steps" id="kb-steps-' + idx + '"><ol>' + steps + '</ol></div>' +
-        '</div>';
-    }
-
     function assignCardHtml(eng) {
       var initials = (eng.name || "?").split(/\s+/).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase();
       var shiftLbl = eng.on_shift ? "On shift" : (eng.on_call ? "On-call" : "Off shift");
@@ -177,7 +150,6 @@
     function renderData(data) {
       var es = data.executive_summary || {};
       var trends = data.incident_trends || {};
-      var kbs = data.knowledge_base_recommendations || [];
       var assign = data.recommended_assignment || {};
       var eng = assign.engineer || {};
       var sla = data.sla;
@@ -210,12 +182,6 @@
         html += '<div class="pattern-box"><b>Pattern detected:</b> ' + escapeHtml(es.pattern_detected) + '</div>';
       }
       html += '<div class="divider"></div>';
-
-      if (kbs.length) {
-        html += '<div class="section-label" style="margin-bottom:10px">KNOWLEDGE BASE RECOMMENDATIONS</div>';
-        kbs.slice(0, 3).forEach(function (kb, i) { html += kbCardHtml(kb, i); });
-        html += '<div class="divider"></div>';
-      }
 
       if (eng.name) {
         html += '<div class="row-between"><span class="section-label">RECOMMENDED ASSIGNMENT</span>' + confidencePill(eng.confidence) + '</div>';
@@ -250,23 +216,6 @@
           var key = e.currentTarget.getAttribute("data-trend");
           var bucket = (data.incident_trends || {})[key];
           document.getElementById("trend-detail").innerHTML = trendDetailHtml(bucket);
-        });
-      }
-
-      var kbToggles = el.querySelectorAll("[data-kb-toggle]");
-      for (var j = 0; j < kbToggles.length; j++) {
-        kbToggles[j].addEventListener("click", function (e) {
-          var idx = e.currentTarget.getAttribute("data-kb-toggle");
-          var steps = document.getElementById("kb-steps-" + idx);
-          steps.style.display = (steps.style.display === "block") ? "none" : "block";
-        });
-      }
-
-      var kbLinks = el.querySelectorAll("[data-kb-link]");
-      for (var k = 0; k < kbLinks.length; k++) {
-        kbLinks[k].addEventListener("click", function (e) {
-          var url = e.currentTarget.getAttribute("data-kb-link");
-          if (url) openExternal(url);
         });
       }
 
