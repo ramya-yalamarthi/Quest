@@ -99,6 +99,36 @@ def _live_feedback_stats(root_cause_type: str) -> tuple:
             db.close()
 
 
+def _live_link_stats(ticket_id: str, links: list) -> list:
+    """DB-backed per-reference-link stats (times shown / success rate) for the
+    note's Refs line. Fully optional -- any failure (no DB, bad ticket id)
+    returns the links unchanged so the note never breaks on this."""
+    try:
+        from uuid import UUID
+        from app.db.session import SessionLocal
+        from app.agents.kb import record_ref_link_recommendation
+        tid = UUID(str(ticket_id))
+    except Exception:
+        return links
+    db = None
+    try:
+        db = SessionLocal()
+        annotated = []
+        for ln in links:
+            url = ln.get("url")
+            if not url:
+                annotated.append(ln)
+                continue
+            stats = record_ref_link_recommendation(db, tid, url, ln.get("title", ""))
+            annotated.append({**ln, **stats})
+        return annotated
+    except Exception:
+        return links
+    finally:
+        if db is not None:
+            db.close()
+
+
 # One supervisor for the app: state store is shared (Redis/in-memory),
 # audit goes to Postgres ai_audit_log via the existing SessionLocal pattern.
 _orchestrator = Orchestrator(
@@ -212,7 +242,7 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
         ann_id = None
     try:
         corpus = client.list_cases(top=100, resolved_only=True)   # learn from closed cases only
-        advisory, note = select_engine()(case, corpus, org_base=client.cfg["base"])
+        advisory, note = select_engine()(case, corpus, org_base=client.cfg["base"], link_stats_fn=_live_link_stats)
         if ann_id:
             client.update_case_note(ann_id, note)  # fill in the placeholder
         else:
@@ -297,7 +327,7 @@ def get_recommendation(case: str):
         if not target:
             return "<p style='font-family:Segoe UI,Arial'>No recommendation found for this case.</p>"
         corpus = client.list_cases(top=100, resolved_only=True)   # learn from closed cases only
-        _, note = process_case(target, corpus, org_base=client.cfg["base"])
+        _, note = process_case(target, corpus, org_base=client.cfg["base"], link_stats_fn=_live_link_stats)
         return note
     except Exception as exc:
         return f"<p style='font-family:Segoe UI,Arial'>Could not load recommendation: {exc}</p>"
@@ -337,6 +367,43 @@ def record_feedback(case: str, v: str = "like", comment: str = ""):
     )
 
 
+@router.get("/ref-feedback", response_class=HTMLResponse)
+def record_ref_feedback(case: str, kb: str, v: str = "like", comment: str = ""):
+    """Per-document 👍/👎 from the Refs line -- distinct from /feedback, which
+    rates the OVERALL recommendation. This tracks the success rate for the
+    ONE specific reference document, feeding match_kb_articles()'s ranking."""
+    verdict = "like" if str(v).lower() == "like" else "dislike"
+    try:
+        from uuid import UUID
+        from app.db.session import SessionLocal
+        from app.agents.kb import submit_kb_feedback, record_kb_outcome
+        db = SessionLocal()
+        try:
+            tid, kid = UUID(case.replace("{", "").replace("}", "")), UUID(kb)
+            submit_kb_feedback(db, ticket_id=tid, kb_id=kid, verdict=verdict, comment=comment)
+            if verdict == "like":      # 👍 IS the success signal for this document
+                record_kb_outcome(db, kid, resolved=True)
+        finally:
+            db.close()
+    except Exception:
+        pass
+    try:
+        from app.orchestrator.dataverse import DataverseClient, available
+        if available():
+            label = "\U0001f44d Helpful" if verdict == "like" else "\U0001f44e Not helpful"
+            DataverseClient().create_case_note(case, "AI Reference Feedback",
+                                                f"Engineer rated a cited reference document: {label}")
+    except Exception:
+        pass
+    emoji = "\U0001f44d" if verdict == "like" else "\U0001f44e"
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'><title>Feedback</title></head>"
+        "<body style='font-family:Segoe UI,Arial,sans-serif;text-align:center;padding:48px;color:#222'>"
+        f"<div style='font-size:46px'>{emoji}</div>"
+        "<h2>Thanks for rating this reference!</h2></body></html>"
+    )
+
+
 @router.get("/refine", response_class=HTMLResponse)
 def refine_recommendation(case: str, comment: str = ""):
     """Regenerate the recommendation for a Case, taking the engineer's 👎 comment
@@ -354,7 +421,7 @@ def refine_recommendation(case: str, comment: str = ""):
         from app.orchestrator.d365_runner import process_case
         corpus = client.list_cases(top=100, resolved_only=True)
         _, note = process_case(target, corpus, org_base=client.cfg["base"],
-                               feedback=(comment or ""))
+                               link_stats_fn=_live_link_stats, feedback=(comment or ""))
         return note
     except Exception as exc:
         return f"<p style='font-family:Segoe UI,Arial'>Could not refine: {exc}</p>"

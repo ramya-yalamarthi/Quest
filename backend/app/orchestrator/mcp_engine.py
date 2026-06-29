@@ -70,6 +70,7 @@ def process_case_mcp(
     agents: Optional[dict] = None,          # accepted for signature parity / tests
     ref_search_fn: Optional[Callable] = None,
     link_validate_fn: Optional[Callable] = None,
+    link_stats_fn: Optional[Callable] = None,
     feedback: str = "",
 ) -> tuple:
     """Deterministic MCP engine. Identical contract + output to
@@ -90,5 +91,6 @@ def process_case_mcp(
         agents=mcp_agents,
         ref_search_fn=ref_search_fn if ref_search_fn is not None else _mcp_ref_search,
         link_validate_fn=link_validate_fn,
+        link_stats_fn=link_stats_fn,
         feedback=feedback,
     )

@@ -274,12 +274,18 @@ def format_note(advisory: dict) -> str:
     ue = f" ({_esc(ult['eta'])})" if ult.get("eta") else ""
     P.append(f"• Ultimate fix{ue}: {_esc(ult.get('summary', ''))}")
     if links:
-        parts = []
+        P.append("• Refs:")
         for ln in links:
             title = _esc(ln.get("title") or ln.get("source") or "ref")
             u = ln.get("url")
-            parts.append(f'<a href="{_href(u)}">{title}</a>' if u else title)
-        P.append("• Refs: " + " · ".join(parts))
+            label = f'<a href="{_href(u)}">{title}</a>' if u else title
+            line = f"&nbsp;&nbsp;– {label}"
+            if ln.get("times_recommended"):
+                line += f" ({_pct(ln['success_rate'])} solved, {ln['times_recommended']} tickets)"
+            if ln.get("like_url") and ln.get("dislike_url"):
+                line += (f' &nbsp; <a href="{_href(ln["like_url"])}">👍</a>'
+                         f' <a href="{_href(ln["dislike_url"])}">👎</a>')
+            P.append(line)
     P.append("")
 
     workflow = advisory.get("suggested_workflow")
@@ -309,6 +315,7 @@ def process_case(
     agents: Optional[dict] = None,
     ref_search_fn: Optional[Callable] = None,
     link_validate_fn: Optional[Callable] = None,
+    link_stats_fn: Optional[Callable] = None,
     feedback: str = "",
 ) -> tuple:
     """Run Routing -> Diagnosis -> Recommendation for `case`, grounded in the
@@ -369,6 +376,14 @@ def process_case(
         except Exception:
             extra = []
         links = [e for e in (extra or []) if is_official_doc(e.get("url", ""))][:2]
+    # Per-doc success-rate tracking (DB-backed, fully optional -- never
+    # blocks the note if unavailable): annotates each link with how many
+    # tickets it's been shown on and resolved how many of those.
+    if links and link_stats_fn:
+        try:
+            links = link_stats_fn(case.get("id"), links) or links
+        except Exception:
+            pass
     recommendation["trusted_links"] = links
 
     # Composite confidence: blend ALL four signal sources (not just the
@@ -420,4 +435,8 @@ def process_case(
     if fb_base and cid:
         advisory["feedback_like_url"] = f"{fb_base}/orchestrator/feedback?case={cid}&v=like"
         advisory["feedback_dislike_url"] = f"{fb_base}/orchestrator/feedback?case={cid}&v=dislike"
+        for ln in links:
+            if ln.get("kb_id"):
+                ln["like_url"] = f"{fb_base}/orchestrator/ref-feedback?case={cid}&kb={ln['kb_id']}&v=like"
+                ln["dislike_url"] = f"{fb_base}/orchestrator/ref-feedback?case={cid}&kb={ln['kb_id']}&v=dislike"
     return advisory, format_note(advisory)

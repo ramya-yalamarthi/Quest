@@ -79,3 +79,32 @@ def submit_kb_feedback(db: Session, ticket_id, kb_id, verdict: str, comment: str
     db.add(KBFeedback(ticket_id=ticket_id, kb_id=kb_id, verdict=verdict,
                        comment=comment or None, created_by=created_by))
     db.commit()
+
+
+def find_or_create_kb_article_by_url(db: Session, url: str, title: str = "", category: str = "") -> KBArticle:
+    """For reference links found dynamically (web search results, e.g. the
+    D365 pipeline's Microsoft Learn refs) rather than the ops-curated catalog
+    matched by embedding. Matched by URL since there's no ticket text to
+    embed against -- the same URL recommended for different tickets is the
+    SAME article, so its stats accumulate across tickets."""
+    article = db.query(KBArticle).filter(KBArticle.url == url).first()
+    if article:
+        return article
+    article = KBArticle(title=title or url, url=url, category=category or None)
+    db.add(article)
+    db.commit()
+    db.refresh(article)
+    return article
+
+
+def record_ref_link_recommendation(db: Session, ticket_id, url: str, title: str = "") -> dict:
+    """Find-or-create the KB article for this URL, record that it was shown
+    on this ticket, and return its current success-rate stats for display."""
+    article = find_or_create_kb_article_by_url(db, url, title)
+    record_kb_mapping(db, ticket_id, article.kb_id, similarity=None)
+    db.refresh(article)
+    return {
+        "kb_id": str(article.kb_id), "url": article.url, "title": article.title,
+        "success_rate": round(article.success_rate, 4),
+        "times_recommended": article.times_recommended, "times_resolved": article.times_resolved,
+    }

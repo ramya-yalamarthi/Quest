@@ -8,12 +8,16 @@ from app.db.base import Base
 
 class KBFeedback(Base):
     """Engineer like/dislike on ONE cited KB article (separate from
-    recommendation_feedback, which rates the overall recommendation)."""
+    recommendation_feedback, which rates the overall recommendation).
+
+    ticket_id has NO foreign key (same precedent as recommendation_feedback):
+    the D365 pipeline's "ticket" is a Dataverse Case GUID, not a row in the
+    Postgres tickets table, so this column has to hold either kind of id."""
 
     __tablename__ = "kb_feedback"
 
     kb_feedback_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    ticket_id = Column(UUID(as_uuid=True), ForeignKey("tickets.ticket_id"), nullable=False, index=True)
+    ticket_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     kb_id = Column(UUID(as_uuid=True), ForeignKey("kb_articles.kb_id"), nullable=False, index=True)
     verdict = Column(String, nullable=False)  # "like" | "dislike"
     comment = Column(Text, nullable=True)
