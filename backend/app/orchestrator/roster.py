@@ -266,4 +266,8 @@ def assign_engineer(
         "resolved_count": resolved_count, "avg_resolution_hrs": avg_resolution_hrs,
         "track_record": track_record, "remaining_shift_minutes": chosen_remaining,
         "handoff_risk": chosen_remaining is not None and chosen_remaining < LOW_SHIFT_REMAINING_MIN,
+        # Structured fields for card-style UI rendering (vs. parsing `reason` text):
+        "team": chosen["specialty"], "on_shift": is_on_shift(chosen, now_utc), "on_call": chosen["on_call"],
+        "capacity": chosen["capacity"], "load": chosen["load"], "skills": chosen["skills"],
+        "team_score": team_score, "confidence": 1.0 if team_score > 0 else (0.7 if matched else 0.4),
     }

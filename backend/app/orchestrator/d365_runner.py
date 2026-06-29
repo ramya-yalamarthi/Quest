@@ -21,6 +21,7 @@ from app.orchestrator.appconfig import env_float
 from app.orchestrator.roster import _TEAM_ALIASES
 from app.orchestrator.similarity import rank_similar
 from app.orchestrator.sla import sla_status, escalation_reminder
+from app.orchestrator.workflows import find_workflow
 from app.orchestrator.web_refs import search_refs, validate_links, is_official_doc
 
 NOTE_SUBJECT = "AI Support Recommendation"
@@ -109,51 +110,11 @@ def _historical_routing_match(team: str, matches: list) -> Optional[dict]:
     return {"count": hits, "total": len(relevant)}
 
 
-# Category/keyword -> a workflow that COULD be triggered (capacity/quota
-# changes, scale-up) -- always shown as a SUGGESTION for a manager to approve,
-# never auto-run. Keep this conservative: only suggest when the signal is
-# clear, since a wrong suggestion erodes trust faster than no suggestion.
-_WORKFLOW_SUGGESTIONS = (
-    (("quota", "capacity", "instance types", "pricing"), {
-        "title": "Increase NodePool/instance-type quota or capacity allocation",
-        "steps": [
-            "Check current quota/limits for the affected instance type (cloud console or NodePool spec).",
-            "Raise the NodePool's instance-type/capacity limit to cover the shortfall.",
-            "Apply the updated NodePool configuration.",
-            "Confirm Karpenter provisions new nodes and the pending pods schedule.",
-        ],
-    }),
-    (("autoscaling", "scale-up", "scale down", "scaling"), {
-        "title": "Review/trigger an autoscaling policy adjustment",
-        "steps": [
-            "Check the autoscaler logs for recent scale-up/scale-down decisions.",
-            "Review the policy thresholds (min/max nodes, scale-down delay).",
-            "Adjust the thresholds if scaling is too conservative for current load.",
-            "Trigger a manual scale-up if pods are pending on insufficient nodes.",
-        ],
-    }),
-    (("pending", "provisioning", "nodepool", "scheduling"), {
-        "title": "Run a NodePool provisioning health-check",
-        "steps": [
-            "Verify the Karpenter controller is running and healthy.",
-            "Check the NodePool/EC2NodeClass status for errors.",
-            "Confirm cloud-provider service quotas aren't blocking provisioning.",
-            "Re-trigger provisioning once the blocker is cleared and confirm pods schedule.",
-        ],
-    }),
-)
-
-
 def _suggested_workflow(team: str, root_cause: str, ticket_text: str = "") -> Optional[dict]:
     """A concrete workflow -- title + steps -- grounded in the routed team +
     root cause + ticket text. None (no filler) if nothing clearly points to
-    one. These are steps for a human to RUN, not something this app executes;
-    there's no API/Power Automate wiring behind this yet."""
-    text = f"{team} {root_cause} {ticket_text}".lower()
-    for keywords, workflow in _WORKFLOW_SUGGESTIONS:
-        if any(k in text for k in keywords):
-            return workflow
-    return None
+    one."""
+    return find_workflow(team, root_cause, ticket_text)
 
 
 def _window_counts(matches: list, now: Optional[datetime] = None) -> dict:
@@ -172,6 +133,44 @@ def _window_counts(matches: list, now: Optional[datetime] = None) -> dict:
             if age <= span:
                 counts[key] += 1
     return counts
+
+
+def _window_buckets(matches: list, org_base: str = "", now: Optional[datetime] = None) -> dict:
+    """Like _window_counts, but also keeps the actual RELEVANT tickets per
+    bucket (id, ticket_number, title, url, created_on) -- the basis for the
+    rich popup's "View incidents" links, which need real tickets to show,
+    not just a count."""
+    now = now or datetime.now(timezone.utc)
+    buckets = {"week": [], "month": [], "quarter": []}
+    for m in matches:
+        if m.get("display_score", 0) < MIN_DISPLAY:
+            continue
+        created = _parse_created(m.get("created_on"))
+        if not created:
+            continue
+        age = now - created
+        entry = {
+            "id": m.get("id"), "ticket_number": m.get("ticket_number"), "title": m.get("title"),
+            "url": m.get("url") or case_url(org_base, m.get("id")), "created_on": m.get("created_on"),
+        }
+        for key, span in _WINDOWS:
+            if age <= span:
+                buckets[key].append(entry)
+    return {k: {"count": len(v), "tickets": v} for k, v in buckets.items()}
+
+
+def _pattern_detected(window_counts: dict) -> Optional[str]:
+    """Generic, honest trend narrative from real counts only -- no invented
+    region/version specifics we can't actually attribute to anything."""
+    month, quarter = window_counts.get("month", 0), window_counts.get("quarter", 0)
+    if month == 0:
+        return None
+    quarterly_avg_monthly = quarter / 3.0
+    if quarterly_avg_monthly > 0:
+        multiplier = month / quarterly_avg_monthly
+        if multiplier >= 1.3:
+            return f"{month} similar incidents in the past 30 days — about {multiplier:.1f}x the quarterly average."
+    return f"{month} similar incidents in the past 30 days."
 
 
 def format_note(advisory: dict) -> str:
@@ -351,7 +350,9 @@ def process_case(
     # calibration (hide the weak tail), but always keep the strongest one.
     shown = [s for s in similar if s.get("display_score", 0) >= MIN_DISPLAY] or similar[:1]
     window_counts = _window_counts(ranked)
-    diagnosis = {**diag, "similar_incidents": shown, "window_counts": window_counts}
+    window_buckets = _window_buckets(ranked, org_base=org_base)
+    diagnosis = {**diag, "similar_incidents": shown, "window_counts": window_counts,
+                 "window_buckets": window_buckets, "pattern_detected": _pattern_detected(window_counts)}
     context["diagnosis"] = diag
     recommendation = rec_agent.run(context)            # hot + ultimate fix + links
 

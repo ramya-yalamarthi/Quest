@@ -5,36 +5,88 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AI Insights</title>
   <style>
-    body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f3f2f1; color: #201f1e; }
+    body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f3f2f1; color: #1f2937; }
     .wrap { padding: 16px; }
-    .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .avatar { width: 34px; height: 34px; border-radius: 50%; background: #0f3d6e; color: #fff;
-              display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; }
+    .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg,#0078d4,#3b82f6); color: #fff;
+              display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex-shrink: 0; }
     .head h2 { margin: 0; font-size: 16px; color: #0f3d6e; }
+    .head .sub { font-size: 12px; color: #6b7280; margin-top: 1px; }
     .card { background: #fff; border: 1px solid #edebe9; border-radius: 8px; padding: 18px 20px;
             box-shadow: 0 2px 6px rgba(0,0,0,.08); line-height: 1.55; font-size: 14px; word-wrap: break-word; }
-    .card b { color: #0f3d6e; }
     .card a { color: #0078d4; text-decoration: none; }
     .card a:hover { text-decoration: underline; }
     .spinner { display: flex; align-items: center; gap: 10px; color: #605e5c; padding: 24px; }
-    .dot { width: 16px; height: 16px; border: 3px solid #c8c6c4; border-top-color: #0078d4;
-           border-radius: 50%; animation: spin .8s linear infinite; }
+    .dot-spin { width: 16px; height: 16px; border: 3px solid #c8c6c4; border-top-color: #0078d4;
+           border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .err { color: #a4262c; padding: 16px; }
+
+    .section-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: #6b7280; text-transform: uppercase; }
+    .row-between { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .divider { border-top: 1px solid #edebe9; margin: 16px 0; }
+    .pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .pill-green { background: #dcfce7; color: #15803d; }
+    .pill-blue { background: #dbeafe; color: #1d4ed8; }
+    .pill-amber { background: #fef3c7; color: #92400e; }
+    .pill-gray { background: #f1f5f9; color: #475569; }
+
+    .trend-row { display: flex; gap: 10px; margin-bottom: 4px; }
+    .trend-card { flex: 1; background: #f8fafc; border: 1px solid #eef1f5; border-radius: 8px; padding: 12px 14px; }
+    .trend-card .lbl { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+    .trend-card .num { font-size: 22px; font-weight: 700; color: #111827; margin-bottom: 6px; }
+    .trend-card .view { font-size: 12px; color: #0078d4; cursor: pointer; background: none; border: none; padding: 0; font-family: inherit; }
+    .trend-detail { margin-top: 8px; font-size: 12.5px; background: #f8fafc; border-radius: 8px; padding: 10px 12px; }
+    .trend-detail a { display: block; padding: 3px 0; }
+
+    .bullet-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start; }
+    .bullet-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+    .bullet-dot.blue { background: #2563eb; }
+    .bullet-dot.orange { background: #f59e0b; }
+    .bullet-lbl { font-weight: 600; font-size: 13.5px; color: #111827; }
+    .bullet-text { font-size: 13.5px; color: #374151; }
+    .pattern-box { background: #eff6ff; border-left: 3px solid #2563eb; border-radius: 6px; padding: 10px 12px; font-size: 13px; color: #1e3a8a; margin-top: 4px; }
+
+    .kb-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+    .kb-card .kb-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .kb-title { font-weight: 600; font-size: 13.5px; color: #0078d4; cursor: pointer; }
+    .kb-stats { display: flex; gap: 14px; align-items: center; font-size: 12px; color: #6b7280; flex-wrap: wrap; }
+    .kb-badge { cursor: default; }
+    .kb-badge.clickable { cursor: pointer; }
+    .kb-steps { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb; font-size: 12.5px; color: #374151; }
+    .kb-steps ol { margin: 0; padding-left: 18px; }
+    .kb-steps li { margin-bottom: 4px; }
+
+    .assign-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
+    .assign-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .assign-avatar { width: 36px; height: 36px; border-radius: 50%; background: #0f3d6e; color: #fff; display: flex;
+                      align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .assign-name { font-weight: 700; font-size: 14px; color: #111827; }
+    .assign-meta { font-size: 12px; color: #6b7280; }
+    .assign-desc { font-size: 13px; color: #374151; margin-bottom: 10px; }
+    .tag-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag { background: #f1f5f9; color: #475569; font-size: 11px; padding: 3px 9px; border-radius: 999px; }
+
+    .sla-line { font-size: 12.5px; color: #374151; margin-top: 10px; }
+    .workflow-box { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; margin-top: 10px; font-size: 13px; }
+    .workflow-box ol { margin: 6px 0 0; padding-left: 18px; }
+
+    .fb-yesno button { padding: 6px 16px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 600; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="head"><div class="avatar">AI</div><h2>AI Insights</h2></div>
+    <div class="head"><div class="avatar">AI</div><div><h2>AI Insights</h2><div class="sub" id="case-sub"></div></div></div>
     <div id="content" class="card">
-      <div class="spinner"><div class="dot"></div> Loading recommendation…</div>
+      <div class="spinner"><div class="dot-spin"></div> Loading recommendation…</div>
     </div>
   </div>
 
   <script>
-    // Deployed backend endpoint that returns the recommendation as HTML.
-    var BACKEND = "https://quest-z7e4.onrender.com/orchestrator/recommendation";
-    var REFINE  = "https://quest-z7e4.onrender.com/orchestrator/refine";
+    var BASE = "https://quest-z7e4.onrender.com";
+    var DATA_URL = BASE + "/orchestrator/recommendation-data";
+    var BACKEND = BASE + "/orchestrator/recommendation";   // plain-HTML fallback
+    var REFINE  = BASE + "/orchestrator/refine";
 
     function getCaseId() {
       var p = new URLSearchParams(window.location.search);
@@ -42,9 +94,272 @@
       return d.replace(/[{}]/g, "").trim();
     }
 
-    // The backend returns REAL HTML, so we render it directly. If a future
-    // response is entity-encoded (starts with &lt;), decode it once first.
-    function render(html) {
+    function escapeHtml(s) {
+      return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function openExternal(url) {
+      var xrm = (window.parent && window.parent.Xrm) ? window.parent.Xrm : (window.Xrm || null);
+      if (xrm && xrm.Navigation && xrm.Navigation.openUrl) { xrm.Navigation.openUrl(url); return; }
+      try { (window.top || window).open(url, "_blank", "noopener"); } catch (_) { window.open(url, "_blank"); }
+    }
+
+    function showErr(msg) {
+      document.getElementById("content").innerHTML = '<div class="err">' + escapeHtml(msg) + '</div>';
+    }
+
+    // ---------- card builders ----------
+    function pct(x) {
+      if (x === null || x === undefined || isNaN(x)) return null;
+      return Math.round(parseFloat(x) * 100);
+    }
+
+    function confidencePill(conf) {
+      var p = pct(conf);
+      if (p === null) return "";
+      var cls = p >= 70 ? "pill-green" : (p >= 45 ? "pill-amber" : "pill-gray");
+      return '<span class="pill ' + cls + '">' + p + '% CONFIDENCE</span>';
+    }
+
+    function trendCard(label, bucket, key) {
+      bucket = bucket || { count: 0, tickets: [] };
+      return '<div class="trend-card">' +
+        '<div class="lbl">' + escapeHtml(label) + '</div>' +
+        '<div class="num">' + (bucket.count || 0) + '</div>' +
+        '<button class="view" data-trend="' + key + '">View incidents &rarr;</button>' +
+        '</div>';
+    }
+
+    function trendDetailHtml(bucket) {
+      if (!bucket || !bucket.tickets || !bucket.tickets.length) {
+        return '<div class="trend-detail">No incidents in this window.</div>';
+      }
+      var rows = bucket.tickets.map(function (t) {
+        var label = escapeHtml((t.ticket_number || "") + " — " + (t.title || ""));
+        return '<a href="' + escapeHtml(t.url || "#") + '" data-extlink="1">' + label + '</a>';
+      }).join("");
+      return '<div class="trend-detail">' + rows + '</div>';
+    }
+
+    function kbCardHtml(kb, idx) {
+      var badge = kb.workflow_available
+        ? '<span class="pill pill-green kb-badge clickable" data-kb-toggle="' + idx + '">&#9654; Workflow available</span>'
+        : '<span class="pill pill-gray kb-badge">&#128203; Manual only</span>';
+      var topPick = kb.top_pick ? '<span class="pill pill-blue">Top pick</span>' : "";
+      var resolved = pct(kb.success_rate);
+      var avg = kb.avg_resolution_hours;
+      var stats = (resolved !== null ? '&#128202; ' + resolved + '% resolved' : '&#128202; no data yet') +
+                  (avg ? ' &nbsp;&middot;&nbsp; &#128338; ~' + (avg < 1 ? Math.round(avg * 60) + ' min' : avg.toFixed(1) + 'h') + ' avg' : '');
+      var steps = (kb.workflow_steps || []).map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join("");
+      return '<div class="kb-card">' +
+        '<div class="kb-top"><span class="kb-title" data-kb-link="' + escapeHtml(kb.url || "") + '">' + escapeHtml(kb.title) + '</span>' + topPick + '</div>' +
+        '<div class="kb-stats">' + stats + badge + '</div>' +
+        '<div class="kb-steps" id="kb-steps-' + idx + '"><ol>' + steps + '</ol></div>' +
+        '</div>';
+    }
+
+    function assignCardHtml(eng) {
+      var initials = (eng.name || "?").split(/\s+/).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase();
+      var shiftLbl = eng.on_shift ? "On shift" : (eng.on_call ? "On-call" : "Off shift");
+      var cap = (eng.capacity != null && eng.load != null) ? (eng.load + "/" + eng.capacity + " capacity") : "";
+      var tags = [eng.team].concat(eng.skills || []).filter(Boolean)
+        .map(function (t) { return '<span class="tag">' + escapeHtml(t) + '</span>'; }).join("");
+      return '<div class="assign-card">' +
+        '<div class="assign-head"><div class="assign-avatar">' + escapeHtml(initials) + '</div><div>' +
+        '<div class="assign-name">' + escapeHtml(eng.name) + '</div>' +
+        '<div class="assign-meta">' + escapeHtml(eng.team || "") + ' &middot; ' + shiftLbl + (cap ? ' &middot; ' + cap : '') + '</div>' +
+        '</div></div>' +
+        '<div class="assign-desc">' + escapeHtml(eng.reason || "") + '</div>' +
+        '<div class="tag-row">' + tags + '</div>' +
+        '</div>';
+    }
+
+    function renderData(data) {
+      var es = data.executive_summary || {};
+      var trends = data.incident_trends || {};
+      var kbs = data.knowledge_base_recommendations || [];
+      var assign = data.recommended_assignment || {};
+      var eng = assign.engineer || {};
+      var sla = data.sla;
+      var workflow = data.suggested_workflow;
+
+      document.getElementById("case-sub").textContent =
+        (data.case && data.case.ticket_number || "") + (data.case && data.case.title ? " · " + data.case.title : "");
+
+      var html = "";
+
+      html += '<div class="section-label" style="margin-bottom:10px">INCIDENT TRENDS</div>';
+      html += '<div class="trend-row">' +
+        trendCard("This week", trends.week, "week") +
+        trendCard("This month", trends.month, "month") +
+        trendCard("This quarter", trends.quarter, "quarter") +
+        '</div>';
+      html += '<div id="trend-detail"></div>';
+      html += '<div class="divider"></div>';
+
+      html += '<div class="row-between"><span class="section-label">EXECUTIVE SUMMARY</span>' + confidencePill(es.confidence) + '</div>';
+      if (es.current_issue) {
+        html += '<div class="bullet-row"><div class="bullet-dot blue"></div><div>' +
+          '<div class="bullet-lbl">Current issue</div><div class="bullet-text">' + escapeHtml(es.current_issue) + '</div></div></div>';
+      }
+      if (es.probable_cause) {
+        html += '<div class="bullet-row"><div class="bullet-dot orange"></div><div>' +
+          '<div class="bullet-lbl">Probable cause</div><div class="bullet-text">' + escapeHtml(es.probable_cause) + '</div></div></div>';
+      }
+      if (es.pattern_detected) {
+        html += '<div class="pattern-box"><b>Pattern detected:</b> ' + escapeHtml(es.pattern_detected) + '</div>';
+      }
+      html += '<div class="divider"></div>';
+
+      if (kbs.length) {
+        html += '<div class="section-label" style="margin-bottom:10px">KNOWLEDGE BASE RECOMMENDATIONS</div>';
+        kbs.slice(0, 3).forEach(function (kb, i) { html += kbCardHtml(kb, i); });
+        html += '<div class="divider"></div>';
+      }
+
+      if (eng.name) {
+        html += '<div class="row-between"><span class="section-label">RECOMMENDED ASSIGNMENT</span>' + confidencePill(eng.confidence) + '</div>';
+        html += assignCardHtml(eng);
+      }
+
+      if (sla) {
+        var mins = sla.minutes_to_resolution_deadline;
+        var clock = mins >= 0 ? (mins + " min left") : ("OVERDUE by " + (-mins) + " min");
+        html += '<div class="sla-line">SLA: <b>' + escapeHtml(sla.tier) + '</b> &middot; Resolution ' + clock +
+                (sla.resolution_breached ? ' &middot; <span style="color:#b91c1c">&#9888; SLA BREACHED</span>' : '') + '</div>';
+      }
+      if (workflow) {
+        var steps = (workflow.steps || []).map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join("");
+        html += '<div class="workflow-box"><b>Suggested workflow:</b> ' + escapeHtml(workflow.title) + '<ol>' + steps + '</ol></div>';
+      }
+
+      html += '<div class="divider"></div><div id="feedback-anchor"></div>';
+
+      var el = document.getElementById("content");
+      el.innerHTML = html;
+      renderFeedbackPrompt();
+      wireDynamicHandlers(data);
+    }
+
+    function wireDynamicHandlers(data) {
+      var el = document.getElementById("content");
+
+      var trendButtons = el.querySelectorAll("[data-trend]");
+      for (var i = 0; i < trendButtons.length; i++) {
+        trendButtons[i].addEventListener("click", function (e) {
+          var key = e.currentTarget.getAttribute("data-trend");
+          var bucket = (data.incident_trends || {})[key];
+          document.getElementById("trend-detail").innerHTML = trendDetailHtml(bucket);
+        });
+      }
+
+      var kbToggles = el.querySelectorAll("[data-kb-toggle]");
+      for (var j = 0; j < kbToggles.length; j++) {
+        kbToggles[j].addEventListener("click", function (e) {
+          var idx = e.currentTarget.getAttribute("data-kb-toggle");
+          var steps = document.getElementById("kb-steps-" + idx);
+          steps.style.display = (steps.style.display === "block") ? "none" : "block";
+        });
+      }
+
+      var kbLinks = el.querySelectorAll("[data-kb-link]");
+      for (var k = 0; k < kbLinks.length; k++) {
+        kbLinks[k].addEventListener("click", function (e) {
+          var url = e.currentTarget.getAttribute("data-kb-link");
+          if (url) openExternal(url);
+        });
+      }
+
+      el.addEventListener("click", function (e) {
+        var a = e.target;
+        while (a && a.tagName !== "A") a = a.parentNode;
+        if (a && a.getAttribute && a.getAttribute("data-extlink")) {
+          e.preventDefault();
+          openExternal(a.href);
+        }
+      });
+    }
+
+    // ---------- feedback (same survey mechanism as before, restyled) ----------
+    var LIKE_REASONS = ["Correct root cause identified", "Right engineer assigned", "The fix actually worked", "Saved me time", "Other"];
+    var DISLIKE_REASONS = ["Wrong team / category", "Wrong engineer assigned", "Root cause was incorrect", "The fix didn't help", "Other"];
+    var fbDone = false;
+    var lastData = null;
+
+    function feedbackUrl(isLike) {
+      return BACKEND.replace("/recommendation", "/feedback") +
+             "?case=" + encodeURIComponent(getCaseId()) + "&v=" + (isLike ? "like" : "dislike");
+    }
+
+    function renderFeedbackPrompt() {
+      var anchor = document.getElementById("feedback-anchor");
+      if (!anchor || fbDone) return;
+      anchor.innerHTML =
+        '<div style="font-size:14px;font-weight:600;margin-bottom:10px">Was this recommendation helpful?</div>' +
+        '<div class="fb-yesno">' +
+        '<button id="fb-yes" style="margin-right:8px;border:1px solid #0078d4;background:#e8f1fb;color:#0078d4">&#128077; Yes</button>' +
+        '<button id="fb-no" style="border:1px solid #c8c6c4;background:#fff;color:#201f1e">&#128078; No</button>' +
+        '</div>';
+      document.getElementById("fb-yes").addEventListener("click", function () { showFeedbackSurvey(true); });
+      document.getElementById("fb-no").addEventListener("click", function () { showFeedbackSurvey(false); });
+    }
+
+    function showFeedbackSurvey(isLike) {
+      var reasons = isLike ? LIKE_REASONS : DISLIKE_REASONS;
+      var anchor = document.getElementById("feedback-anchor");
+      var checks = reasons.map(function (r, i) {
+        return '<label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;cursor:pointer">' +
+               '<input type="checkbox" class="fb-reason" value="' + escapeHtml(r) + '" id="fb-r' + i + '"> ' + escapeHtml(r) + '</label>';
+      }).join("");
+      anchor.innerHTML =
+        '<div style="font-size:15px;font-weight:600;color:#0f3d6e;margin-bottom:14px">Was this recommendation helpful?</div>' +
+        '<div class="fb-yesno" style="margin-bottom:16px">' +
+        '<button id="fb-yes2" style="margin-right:8px;border:1px solid ' + (isLike ? '#0078d4;background:#e8f1fb;color:#0078d4' : '#c8c6c4;background:#fff;color:#201f1e') + '">&#128077; Yes</button>' +
+        '<button id="fb-no2" style="border:1px solid ' + (!isLike ? '#0078d4;background:#e8f1fb;color:#0078d4' : '#c8c6c4;background:#fff;color:#201f1e') + '">&#128078; No</button>' +
+        '</div>' +
+        '<div style="font-size:13px;font-weight:600;margin-bottom:8px">What is the reason for your feedback?</div>' +
+        '<div style="margin-bottom:14px">' + checks + '</div>' +
+        '<div style="font-size:12.5px;color:#6b7280;margin-bottom:6px">Tell us more (optional):</div>' +
+        '<textarea id="fb-comment" style="width:100%;box-sizing:border-box;min-height:60px;border:1px solid #c8c6c4;border-radius:6px;padding:8px;font-family:inherit;font-size:13px;margin-bottom:12px"></textarea>' +
+        '<button id="fb-submit" style="background:#0078d4;color:#fff;border:none;border-radius:999px;padding:7px 20px;cursor:pointer;font-size:13px;font-weight:600">Submit</button>';
+
+      document.getElementById("fb-yes2").addEventListener("click", function () { showFeedbackSurvey(true); });
+      document.getElementById("fb-no2").addEventListener("click", function () { showFeedbackSurvey(false); });
+      document.getElementById("fb-submit").addEventListener("click", function () {
+        var picked = Array.prototype.slice.call(document.querySelectorAll(".fb-reason:checked")).map(function (c) { return c.value; });
+        var freeText = (document.getElementById("fb-comment").value || "").trim();
+        var comment = picked.concat(freeText ? [freeText] : []).join(" | ");
+        submitFeedback(feedbackUrl(isLike), comment, isLike);
+      });
+    }
+
+    function submitFeedback(url, comment, isLike) {
+      fbDone = true;
+      try { fetch(url + "&comment=" + encodeURIComponent(comment)).catch(function () {}); } catch (e) {}
+      var anchor = document.getElementById("feedback-anchor");
+
+      if (isLike) {
+        anchor.innerHTML = '<div style="text-align:center;padding:16px 0">' +
+          '<div style="font-size:36px;margin-bottom:6px">&#128077;</div>' +
+          '<div style="color:#107c10;font-size:14px;font-weight:600">Thanks for your feedback!</div></div>';
+        return;
+      }
+
+      anchor.innerHTML = '<div class="spinner"><div class="dot-spin"></div> Updating the recommendation based on your feedback…</div>';
+      var refineUrl = REFINE + "?case=" + encodeURIComponent(getCaseId()) + "&comment=" + encodeURIComponent(comment);
+      fetch(refineUrl)
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(function () {
+          fbDone = false;
+          loadRecommendation(getCaseId());   // re-fetch the structured data fresh
+        })
+        .catch(function () {
+          anchor.innerHTML = '<div class="err">Could not update the recommendation. Your feedback was recorded.</div>';
+        });
+    }
+
+    // ---------- plain-HTML fallback (Dataverse note, if the JSON endpoint is unavailable) ----------
+    function renderPlainHtml(html) {
       var el = document.getElementById("content");
       if (html && /^\s*&lt;/.test(html)) {
         var t = document.createElement("textarea");
@@ -54,137 +369,6 @@
       el.innerHTML = html || '<div class="err">No recommendation found for this case.</div>';
     }
 
-    var fbDone = false;   // feedback already submitted for this open
-
-    // Intercept link clicks: feedback 👍/👎 are handled INLINE (no navigation);
-    // every other link opens in a new tab (target="_blank" is blocked in the
-    // sandboxed web-resource iframe, so use D365's navigation API).
-    function wireLinks(el) {
-      el.addEventListener("click", function (e) {
-        var a = e.target;
-        while (a && a.tagName !== "A") a = a.parentNode;
-        if (!a || !a.href) return;
-        e.preventDefault();
-        if (a.href.indexOf("/orchestrator/feedback") !== -1) {
-          onFeedbackClick(a);
-          return;
-        }
-        var url = a.href;
-        var xrm = (window.parent && window.parent.Xrm) ? window.parent.Xrm : (window.Xrm || null);
-        if (xrm && xrm.Navigation && xrm.Navigation.openUrl) {
-          xrm.Navigation.openUrl(url);
-        } else {
-          try { (window.top || window).open(url, "_blank", "noopener"); }
-          catch (_) { window.open(url, "_blank"); }
-        }
-      });
-    }
-
-    var LIKE_REASONS = [
-      "Correct root cause identified",
-      "Right engineer assigned",
-      "The fix actually worked",
-      "Saved me time",
-      "Other",
-    ];
-    var DISLIKE_REASONS = [
-      "Wrong team / category",
-      "Wrong engineer assigned",
-      "Root cause was incorrect",
-      "The fix didn't help",
-      "Other",
-    ];
-
-    function escapeHtml(s) {
-      return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-
-    function feedbackUrl(isLike) {
-      return BACKEND.replace("/recommendation", "/feedback") +
-             "?case=" + encodeURIComponent(getCaseId()) + "&v=" + (isLike ? "like" : "dislike");
-    }
-
-    // Replaces the AI analysis card with the survey -- same popup, same spot,
-    // matching the "Was this page helpful?" pattern (Yes/No + reasons + comment).
-    function showFeedbackSurvey(isLike) {
-      var reasons = isLike ? LIKE_REASONS : DISLIKE_REASONS;
-      var el = document.getElementById("content");
-      var checks = reasons.map(function (r, i) {
-        return '<label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;cursor:pointer">' +
-               '<input type="checkbox" class="fb-reason" value="' + escapeHtml(r) + '" id="fb-r' + i + '"> ' +
-               escapeHtml(r) + '</label>';
-      }).join("");
-      el.innerHTML =
-        '<div style="font-size:16px;font-weight:600;color:#0f3d6e;margin-bottom:14px">Was this recommendation helpful?</div>' +
-        '<div style="margin-bottom:16px">' +
-          '<button id="fb-yes" style="margin-right:8px;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:13px;' +
-          'border:1px solid ' + (isLike ? '#0078d4;background:#e8f1fb;color:#0078d4' : '#c8c6c4;background:#fff;color:#201f1e') + '">👍 Yes</button>' +
-          '<button id="fb-no" style="padding:6px 16px;border-radius:4px;cursor:pointer;font-size:13px;' +
-          'border:1px solid ' + (!isLike ? '#0078d4;background:#e8f1fb;color:#0078d4' : '#c8c6c4;background:#fff;color:#201f1e') + '">👎 No</button>' +
-        '</div>' +
-        '<div style="font-size:14px;font-weight:600;margin-bottom:8px">What is the reason for your feedback?</div>' +
-        '<div style="margin-bottom:14px">' + checks + '</div>' +
-        '<div style="font-size:13px;color:#605e5c;margin-bottom:6px">Tell us more (optional):</div>' +
-        '<textarea id="fb-comment" style="width:100%;box-sizing:border-box;min-height:64px;' +
-        'border:1px solid #c8c6c4;border-radius:6px;padding:8px;font-family:inherit;font-size:13px;margin-bottom:12px"></textarea>' +
-        '<button id="fb-submit" style="background:#0078d4;color:#fff;border:none;border-radius:4px;' +
-        'padding:7px 20px;cursor:pointer;font-size:13px">Submit</button>';
-
-      document.getElementById("fb-yes").addEventListener("click", function () { showFeedbackSurvey(true); });
-      document.getElementById("fb-no").addEventListener("click", function () { showFeedbackSurvey(false); });
-      document.getElementById("fb-submit").addEventListener("click", function () {
-        var picked = Array.prototype.slice.call(document.querySelectorAll(".fb-reason:checked"))
-                          .map(function (c) { return c.value; });
-        var freeText = (document.getElementById("fb-comment").value || "").trim();
-        var comment = picked.concat(freeText ? [freeText] : []).join(" | ");
-        submitFeedback(feedbackUrl(isLike), comment, isLike);
-      });
-    }
-
-    function onFeedbackClick(a) {
-      if (fbDone) return;
-      var isLike = /[?&]v=like(\b|&|$)/.test(a.href);
-      showFeedbackSurvey(isLike);
-    }
-
-    function submitFeedback(url, comment, isLike) {
-      fbDone = true;
-      // Record the 👍/👎 (and comment) on the case, fire-and-forget.
-      try { fetch(url + "&comment=" + encodeURIComponent(comment)).catch(function () {}); } catch (e) {}
-
-      // 👍 -> just confirm, in the same popup. 👎 -> regenerate a better answer.
-      if (isLike) {
-        document.getElementById("content").innerHTML =
-          '<div style="text-align:center;padding:24px 0">' +
-          '<div style="font-size:40px;margin-bottom:8px">👍</div>' +
-          '<div style="color:#107c10;font-size:15px;font-weight:600">Thanks for your feedback!</div>' +
-          '</div>';
-        return;
-      }
-
-      // Regenerate the recommendation using the engineer's comment, then show it
-      // in place (no duplicate before/after -- the old answer is replaced).
-      var el = document.getElementById("content");
-      el.innerHTML = '<div class="spinner"><div class="dot"></div> ' +
-                     'Updating the recommendation based on your feedback…</div>';
-      var refineUrl = REFINE + "?case=" + encodeURIComponent(getCaseId()) +
-                      "&comment=" + encodeURIComponent(comment);
-      fetch(refineUrl)
-        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-        .then(function (html) {
-          fbDone = false;          // allow feedback again on the new answer
-          render(html);
-        })
-        .catch(function () {
-          showErr("Could not update the recommendation. Your feedback was recorded.");
-        });
-    }
-
-    function showErr(msg) {
-      document.getElementById("content").innerHTML = '<div class="err">' + msg + '</div>';
-    }
-
-    // CSP-safe fallback: read the latest AI note straight from Dataverse.
     function readNoteFromDataverse(caseId) {
       try {
         var xrm = (window.parent && window.parent.Xrm) ? window.parent.Xrm : (window.Xrm || null);
@@ -192,44 +376,33 @@
         xrm.WebApi.retrieveMultipleRecords(
           "annotation",
           "?$select=notetext&$top=1&$orderby=createdon desc" +
-          "&$filter=_objectid_value eq " + caseId +
-          " and subject eq 'AI Support Recommendation'"
+          "&$filter=_objectid_value eq " + caseId + " and subject eq 'AI Support Recommendation'"
         ).then(function (res) {
-          if (res.entities && res.entities.length) render(res.entities[0].notetext);
+          if (res.entities && res.entities.length) renderPlainHtml(res.entities[0].notetext);
           else showErr("No recommendation found yet for this case.");
         }, function () { showErr("Could not load the recommendation."); });
       } catch (e) { showErr("Could not load the recommendation."); }
     }
 
-    // While the case is still being analysed, the backend note is just a
-    // placeholder ("AI analysis in progress…"). Detect that and keep polling so
-    // the finished answer appears on its own -- no manual Refresh needed.
-    function isInProgress(html) { return /analysis in progress/i.test(html || ""); }
-
-    function showAnalyzing() {
-      document.getElementById("content").innerHTML =
-        '<div class="spinner"><div class="dot"></div> Analyzing the case…</div>';
-    }
-
-    function loadRecommendation(caseId, attempt) {
-      attempt = attempt || 0;
+    function loadPlainFallback(caseId) {
       fetch(BACKEND + "?case=" + encodeURIComponent(caseId))
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-        .then(function (html) {
-          if (isInProgress(html) && attempt < 40) {     // not ready -> wait and retry (~2 min)
-            showAnalyzing();
-            setTimeout(function () { loadRecommendation(caseId, attempt + 1); }, 3000);
-          } else {
-            render(html);
-          }
-        })
+        .then(renderPlainHtml)
         .catch(function () { readNoteFromDataverse(caseId); });
+    }
+
+    // ---------- main load ----------
+    function loadRecommendation(caseId) {
+      document.getElementById("content").innerHTML = '<div class="spinner"><div class="dot-spin"></div> Analyzing the case…</div>';
+      fetch(DATA_URL + "?case=" + encodeURIComponent(caseId))
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (data) { lastData = data; renderData(data); })
+        .catch(function () { loadPlainFallback(caseId); });
     }
 
     (function () {
       var caseId = getCaseId();
       if (!caseId) { showErr("No case id was passed to the dialog."); return; }
-      wireLinks(document.getElementById("content"));   // delegated: attach ONCE, survives re-renders
       loadRecommendation(caseId);
     })();
   </script>

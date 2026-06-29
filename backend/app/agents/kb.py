@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.db.models.kb_article import KBArticle
 from app.db.models.ticket_kb_mapping import TicketKBMapping
 from app.db.models.kb_feedback import KBFeedback
+from app.orchestrator.workflows import find_workflow
 from app.utils.embeddings import get_embedding
 
 
@@ -46,12 +47,18 @@ def match_kb_articles(
     top.sort(key=lambda t: (-t[0].success_rate, t[0].avg_resolution_hours or float("inf"), -t[1]))
     top = top[:top_k]
 
-    return [{
-        "kb_id": str(a.kb_id), "title": a.title, "url": a.url, "summary": a.summary,
-        "category": a.category, "similarity": round(sim, 4),
-        "success_rate": round(a.success_rate, 4), "avg_resolution_hours": a.avg_resolution_hours,
-        "times_recommended": a.times_recommended, "times_resolved": a.times_resolved,
-    } for a, sim in top]
+    out = []
+    for a, sim in top:
+        workflow = find_workflow(a.title, a.category, a.summary)
+        out.append({
+            "kb_id": str(a.kb_id), "title": a.title, "url": a.url, "summary": a.summary,
+            "category": a.category, "similarity": round(sim, 4),
+            "success_rate": round(a.success_rate, 4), "avg_resolution_hours": a.avg_resolution_hours,
+            "times_recommended": a.times_recommended, "times_resolved": a.times_resolved,
+            "workflow_available": workflow is not None,
+            "workflow_steps": (workflow or {}).get("steps", []),
+        })
+    return out
 
 
 def record_kb_mapping(db: Session, ticket_id, kb_id, similarity: float) -> None:
