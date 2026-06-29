@@ -269,6 +269,54 @@ def d365_webhook(evt: D365CaseEvent, x_webhook_secret: Optional[str] = Header(de
             "engine": engine_name()}
 
 
+@router.post("/check-handoffs")
+def check_handoffs(x_webhook_secret: Optional[str] = Header(default=None)):
+    """Run on a SCHEDULE (e.g. a Power Automate Recurrence flow every 15-30
+    min) -- there's no event that fires when an engineer's shift simply ends,
+    so this has to be polled for, unlike case-created which is event-driven.
+
+    For every still-OPEN case that already has an AI note: if the
+    currently-assigned engineer is no longer on shift/on-call, reassign to
+    whoever's available now and post a HANDOFF note carrying the full
+    conversation history forward, so the new engineer isn't starting cold.
+
+    Auth: same WEBHOOK_SECRET as /d365-webhook, if set."""
+    secret = os.getenv("WEBHOOK_SECRET")
+    if secret and x_webhook_secret != secret:
+        raise HTTPException(status_code=401, detail="invalid webhook secret")
+
+    from app.orchestrator.dataverse import DataverseClient, available
+    if not available():
+        raise HTTPException(status_code=503, detail="Dataverse not configured")
+    client = DataverseClient()
+
+    from app.orchestrator.d365_runner import NOTE_SUBJECT
+    from app.orchestrator.handoff import check_handoff, build_conversation_history, format_handoff_note, HANDOFF_NOTE_SUBJECT
+    from app.orchestrator.notify import notify_assigned_engineer
+
+    handed_off, errors = [], []
+    for case in client.list_cases(top=200):
+        if case.get("state") != 0:                          # only ACTIVE cases need a live engineer
+            continue
+        if not client.case_has_note(case["id"], NOTE_SUBJECT):
+            continue                                        # not processed yet -- the webhook will catch it
+        try:
+            notes = client.list_case_notes(case["id"])
+            latest_ai_note = next((n["notetext"] for n in reversed(notes)
+                                    if n.get("subject") == NOTE_SUBJECT), "")
+            result = check_handoff(case, latest_ai_note)
+            if not result:
+                continue
+            history = build_conversation_history(notes)
+            client.create_case_note(case["id"], HANDOFF_NOTE_SUBJECT, format_handoff_note(result, history))
+            notify_assigned_engineer({"routing": {"assigned_engineer": result["new_engineer"]}}, case)
+            handed_off.append(case.get("ticket_number"))
+        except Exception as exc:                            # one bad case must not stop the run
+            errors.append({"ticket": case.get("ticket_number"), "error": str(exc)})
+
+    return {"handed_off": handed_off, "errors": errors}
+
+
 @router.post("/decision")
 def submit_decision(d: Decision):
     """O-09: engineer ACCEPT -> next agent; REJECT -> block + flag retraining."""

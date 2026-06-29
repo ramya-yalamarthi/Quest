@@ -199,6 +199,22 @@ class DataverseClient:
         except Exception:
             return False
 
+    def list_case_notes(self, case_id: str, top: int = 50) -> list[dict]:
+        """ALL notes on a Case (any subject), oldest first -- the basis for a
+        handoff's conversation-history digest. Never raises; returns []."""
+        params = urllib.parse.urlencode({
+            "$select": "subject,notetext,createdon",
+            "$filter": f"_objectid_value eq {case_id}",
+            "$orderby": "createdon asc",
+            "$top": str(top),
+        })
+        try:
+            rows = (self._request("GET", "annotations?" + params) or {}).get("value", [])
+        except Exception:
+            return []
+        return [{"subject": r.get("subject"), "notetext": r.get("notetext"),
+                  "createdon": r.get("createdon")} for r in rows]
+
     # -- write-back -------------------------------------------------------
     def create_case_note(self, case_id: str, subject: str, text: str) -> Optional[str]:
         """Write a Note (annotation) onto a Case. Returns the new annotation id."""
