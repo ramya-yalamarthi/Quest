@@ -84,11 +84,14 @@ def _category_keywords(category: str) -> list[str]:
     return [w.strip().lower() for part in category.split("/") for w in part.split() if len(w.strip()) > 2]
 
 
-def match_kb_docs(team: str, title: str, description: str, top_k: int = 3) -> list[dict]:
+def match_kb_docs(team: str, title: str, description: str, top_k: int = 3) -> tuple[list[dict], bool]:
     """Rank the static catalog by keyword overlap against the routed team +
     ticket text, tie-broken by success rate (the best-proven doc first).
-    Falls back to the catalog's best-proven docs if nothing matched, so the
-    section is never empty for a recognizable Karpenter/K8s ticket."""
+    Falls back to the catalog's best-proven docs if nothing matched.
+
+    Returns (ranked_docs, gap_detected). gap_detected=True means no catalog doc
+    matched by keyword — the returned docs are the best-proven fallbacks, not
+    genuine matches, signalling that no KB article exists for this issue type yet."""
     haystack = f"{team} {title} {description}".lower()
     scored = []
     for doc in KB_CATALOG:
@@ -98,6 +101,7 @@ def match_kb_docs(team: str, title: str, description: str, top_k: int = 3) -> li
         scored.append((score, doc))
     scored.sort(key=lambda t: (-t[0], -t[1]["success_rate"]))
     ranked = [d for s, d in scored if s > 0][:top_k]
-    if not ranked:
+    gap_detected = not ranked
+    if gap_detected:
         ranked = sorted(KB_CATALOG, key=lambda d: -d["success_rate"])[:top_k]
-    return ranked
+    return ranked, gap_detected

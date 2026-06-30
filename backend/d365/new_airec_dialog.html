@@ -29,6 +29,7 @@
     .pill-green { background: #dcfce7; color: #15803d; }
     .pill-blue { background: #dbeafe; color: #1d4ed8; }
     .pill-amber { background: #fef3c7; color: #92400e; }
+    .pill-red { background: #fee2e2; color: #b91c1c; }
     .pill-gray { background: #f1f5f9; color: #475569; }
 
     .trend-row { display: flex; gap: 10px; margin-bottom: 4px; }
@@ -156,12 +157,12 @@
       var avg = fmtAvgResolution(doc.avg_resolution_hours);
       if (avg) meta.push(avg);
       var pills = [];
-      if (doc.top_pick) pills.push('<span class="pill pill-blue">Top pick</span>');
       pills.push((doc.workflow_available && (doc.workflow_steps || []).length)
         ? '<button class="pill pill-green kb-wf-btn" data-kbwf="' + idx + '">Workflow available &rarr;</button>'
         : '<span class="pill pill-gray">Manual only</span>');
+      var topPickPill = doc.top_pick ? '<span class="pill pill-blue">Top pick</span>' : '';
       return '<div class="kb-card">' +
-        '<div class="row-between" style="margin-bottom:0"><div class="kb-title">' + titleHtml + '</div>' + confidencePill(doc.confidence) + '</div>' +
+        '<div class="row-between" style="margin-bottom:0"><div class="kb-title">' + titleHtml + '</div>' + topPickPill + '</div>' +
         '<div class="kb-meta">' + escapeHtml(meta.join(" · ")) + pills.join("") + '</div>' +
         '<div class="kb-wf-steps" id="kb-wf-' + idx + '"></div>' +
         '</div>';
@@ -223,6 +224,27 @@
       if (kbDocs.length) {
         html += '<div class="section-label" style="margin-bottom:10px">KNOWLEDGE BASE RECOMMENDATIONS</div>';
         html += kbDocs.map(function (d, i) { return kbCardHtml(d, i); }).join("");
+        if (data.kb_gap_detected) {
+          html += '<div style="background:#fefce8;border:1px solid #fde68a;border-radius:6px;padding:10px 12px;font-size:12.5px;color:#92400e;margin-top:10px">' +
+            '&#9888; No exact KB article found for this issue type. Documents above are the closest available alternatives — consider creating a dedicated article.' +
+            '</div>';
+        }
+        html += '<div class="divider"></div>';
+      }
+
+      if (data.auto_resolve && data.auto_resolve.available) {
+        var ar = data.auto_resolve;
+        html += '<div class="section-label" style="margin-bottom:10px">AUTO-RESOLUTION AVAILABLE</div>';
+        html += '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px;margin-bottom:4px">' +
+          '<div style="font-size:13px;color:#15803d;font-weight:600;margin-bottom:4px">&#10003; ' + Math.round(ar.match_score * 100) + '% match — near-identical past case resolved</div>' +
+          '<div style="font-size:12.5px;color:#6b7280;margin-bottom:8px">' + escapeHtml(ar.matched_ticket || "") + (ar.matched_title ? ' &middot; ' + escapeHtml(ar.matched_title) : '') + '</div>' +
+          '<button class="pill pill-green" id="auto-resolve-btn" style="cursor:pointer;border:none;font-family:inherit;padding:5px 14px;font-size:12.5px">View matched case &rarr;</button>' +
+          '<div id="auto-resolve-detail" style="margin-top:10px;display:none">' +
+            '<div style="font-size:12.5px;color:#374151;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;white-space:pre-wrap">' +
+              escapeHtml((ar.resolution_text || "").slice(0, 500)) + (ar.resolution_text && ar.resolution_text.length > 500 ? "…" : "") +
+            '</div>' +
+          '</div>' +
+          '</div>';
         html += '<div class="divider"></div>';
       }
 
@@ -234,8 +256,15 @@
       if (sla) {
         var mins = sla.minutes_to_resolution_deadline;
         var clock = mins >= 0 ? (mins + " min left") : ("OVERDUE by " + (-mins) + " min");
+        var riskHtml = "";
+        if (sla.breach_risk === "critical") {
+          riskHtml = ' &middot; <span class="pill pill-red" style="font-size:11px">&#9888; SLA BREACH LIKELY</span>';
+        } else if (sla.breach_risk === "at_risk") {
+          riskHtml = ' &middot; <span class="pill pill-amber" style="font-size:11px">&#9888; At risk of breach</span>';
+        }
         html += '<div class="sla-line">SLA: <b>' + escapeHtml(sla.tier) + '</b> &middot; Resolution ' + clock +
-                (sla.resolution_breached ? ' &middot; <span style="color:#b91c1c">&#9888; SLA BREACHED</span>' : '') + '</div>';
+                (sla.resolution_breached ? ' &middot; <span style="color:#b91c1c">&#9888; SLA BREACHED</span>' : '') +
+                riskHtml + '</div>';
       }
       if (workflow) {
         var steps = (workflow.steps || []).map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join("");
@@ -296,6 +325,32 @@
           stepsEl.innerHTML = '<div class="kb-wf-box"><b>' + escapeHtml(doc.workflow_title || "Suggested workflow") +
             "</b><ol>" + stepsHtml + "</ol></div>";
           btn.textContent = "Hide steps →";
+        });
+      }
+
+      var arBtn = el.querySelector("#auto-resolve-btn");
+      if (arBtn) {
+        arBtn.addEventListener("click", function () {
+          var detail = document.getElementById("auto-resolve-detail");
+          var ar = data.auto_resolve || {};
+          if (!detail) return;
+          if (detail.style.display === "none") {
+            detail.style.display = "block";
+            arBtn.textContent = "Hide details →";
+            if (ar.url) {
+              var linkEl = detail.querySelector(".ar-open-link");
+              if (!linkEl) {
+                var linkDiv = document.createElement("div");
+                linkDiv.style.cssText = "margin-top:8px;font-size:12.5px";
+                linkDiv.innerHTML = '<a href="' + escapeHtml(ar.url) + '" data-extlink="1" style="color:#0078d4">Open matched ticket in D365 →</a>';
+                detail.appendChild(linkDiv);
+                linkDiv.querySelector("a").classList.add("ar-open-link");
+              }
+            }
+          } else {
+            detail.style.display = "none";
+            arBtn.textContent = "View matched case →";
+          }
         });
       }
 

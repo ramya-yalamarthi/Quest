@@ -381,26 +381,23 @@ def get_recommendation(case: str):
         return f"<p style='font-family:Segoe UI,Arial'>Could not load recommendation: {exc}</p>"
 
 
-def _kb_recommendations(team: str, title: str, description: str, top_k: int = 3) -> list:
+def _kb_recommendations(team: str, title: str, description: str, top_k: int = 3) -> dict:
     """KB Recommendations cards for the popup: top_k articles from the static
-    catalog (app/orchestrator/kb_catalog.py -- keyword-matched, no database;
-    same approach as the suggested-workflow steps), each carrying its own
-    display confidence.
+    catalog, keyword-matched against the routed team + ticket text (same
+    approach as workflows.py -- no database required).
 
-    Confidence is NOT a similarity score -- it's "how much should you trust
-    acting on this doc": a doc with a documented step-by-step workflow is
-    safer to follow than a reference-only doc the engineer has to interpret
-    manually, so workflow_available pulls confidence UP and manual-only pulls
-    it DOWN, on top of the doc's proven success rate."""
+    Returns {"docs": [...], "gap_detected": bool}. gap_detected=True when no
+    catalog doc matched by keyword, meaning there is no KB article yet for this
+    issue type -- the frontend shows a notice so the team knows to create one."""
     from app.orchestrator.kb_catalog import match_kb_docs
-    docs = match_kb_docs(team, title, description, top_k=top_k)
+    docs, gap_detected = match_kb_docs(team, title, description, top_k=top_k)
     out = []
     for i, doc in enumerate(docs):
         base = doc["success_rate"]
         bump = 0.15 if doc["workflow_available"] else -0.10
         confidence = max(0.05, min(0.97, base + bump))
         out.append({**doc, "confidence": round(confidence, 4), "top_pick": i == 0})
-    return out
+    return {"docs": out, "gap_detected": gap_detected}
 
 
 @router.get("/recommendation-data")
@@ -427,6 +424,38 @@ def get_recommendation_data(case: str):
     d = advisory.get("diagnosis") or {}
     eng = r.get("assigned_engineer") or {}
 
+    kb = _kb_recommendations(
+        r.get("recommended_team") or "", target.get("title") or "", target.get("description") or "")
+
+    # Auto-resolve: top similar case with >= 90% display score is near-identical
+    # -- surface it so the engineer can apply the same resolution in one step.
+    similar_incidents = d.get("similar_incidents") or []
+    top_sim = similar_incidents[0] if similar_incidents else None
+    auto_resolve = None
+    if top_sim and top_sim.get("display_score", 0) >= 0.90:
+        auto_resolve = {
+            "available": True,
+            "match_score": round(float(top_sim.get("display_score", 0)), 4),
+            "matched_ticket": top_sim.get("ticket_number"),
+            "matched_title": top_sim.get("title"),
+            "resolution_text": (top_sim.get("description") or "")[:600],
+            "url": top_sim.get("url"),
+        }
+
+    # SLA breach risk: compare time remaining against the top KB doc's average
+    # resolution time. If the clock is tighter than what similar cases typically
+    # needed, flag it before the breach happens rather than after.
+    sla_obj = dict(advisory.get("sla") or {})
+    mins_left = sla_obj.get("minutes_to_resolution_deadline")
+    top_kb = kb["docs"][0] if kb["docs"] else None
+    avg_hrs = top_kb.get("avg_resolution_hours") if top_kb else None
+    if mins_left is not None and avg_hrs and not sla_obj.get("resolution_breached"):
+        predicted_mins = avg_hrs * 60
+        if mins_left < predicted_mins * 0.8:
+            sla_obj["breach_risk"] = "critical"
+        elif mins_left < predicted_mins * 1.5:
+            sla_obj["breach_risk"] = "at_risk"
+
     return {
         "case": {"id": target.get("id"), "ticket_number": target.get("ticket_number"), "title": target.get("title")},
         "incident_trends": d.get("window_buckets") or {},
@@ -438,13 +467,14 @@ def get_recommendation_data(case: str):
             "grounded": d.get("grounded", True),
             "pattern_detected": d.get("pattern_detected"),
         },
-        "kb_recommendations": _kb_recommendations(
-            r.get("recommended_team") or "", target.get("title") or "", target.get("description") or ""),
+        "kb_recommendations": kb["docs"],
+        "kb_gap_detected": kb["gap_detected"],
+        "auto_resolve": auto_resolve,
         "recommended_assignment": {
             "team": r.get("recommended_team"), "team_confidence": r.get("confidence"),
             "engineer": eng or None,
         },
-        "sla": advisory.get("sla"),
+        "sla": sla_obj,
         "suggested_workflow": advisory.get("suggested_workflow"),
         "feedback": {
             "like_url": advisory.get("feedback_like_url"),
