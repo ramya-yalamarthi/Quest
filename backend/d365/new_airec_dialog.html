@@ -75,7 +75,9 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="head"><div class="avatar">AI</div><div><h2>AI Insights</h2><div class="sub" id="case-sub"></div></div></div>
+    <div class="head"><div class="avatar">AI</div><div><h2>AI Insights</h2><div class="sub" id="case-sub"></div></div>
+      <a id="mgr-link" href="#" data-extlink="1" style="margin-left:auto;font-size:11px;color:#0078d4;white-space:nowrap;text-decoration:none">Manager view &#8599;</a>
+    </div>
     <div id="content" class="card">
       <div class="spinner"><div class="dot-spin"></div> Loading recommendation…</div>
     </div>
@@ -257,7 +259,14 @@
         html += kbDocs.map(function (d, i) { return kbCardHtml(d, i); }).join("");
         if (data.kb_gap_detected) {
           html += '<div style="background:#fefce8;border:1px solid #fde68a;border-radius:6px;padding:10px 12px;font-size:12.5px;color:#92400e;margin-top:10px">' +
-            '&#9888; No exact KB article found for this issue type. Documents above are the closest available alternatives — consider creating a dedicated article.' +
+            '&#9888; No exact KB article found for this issue type. Documents above are the closest available alternatives.' +
+            '<div style="margin-top:8px">' +
+              '<button id="kb-draft-btn" style="background:none;border:1px solid #92400e;border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer;font-family:inherit;color:#92400e">Draft KB Article &#8595;</button>' +
+            '</div>' +
+            '<div id="kb-draft-detail" style="display:none;margin-top:8px">' +
+              '<pre id="kb-draft-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:12px;background:#fff;border:1px solid #fde68a;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0;color:#374151"></pre>' +
+              '<button id="kb-draft-copy" style="margin-top:6px;background:none;border:1px solid #92400e;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#92400e">Copy to clipboard</button>' +
+            '</div>' +
             '</div>';
         }
         html += '<div class="divider"></div>';
@@ -297,6 +306,22 @@
                 (sla.resolution_breached ? ' &middot; <span style="color:#b91c1c">&#9888; SLA BREACHED</span>' : '') +
                 riskHtml + '</div>';
       }
+      if (data.resolution_prediction) {
+        var rp = data.resolution_prediction;
+        var rpRange = "~" + rp.range_low + "–" + rp.range_high + " " + rp.unit +
+                      " (" + (rp.workflow_guided ? "workflow-guided" : "manual") + ")";
+        var rpCls = rp.confidence === "high" ? "color:#15803d" : (rp.confidence === "medium" ? "color:#92400e" : "color:#475569");
+        html += '<div style="font-size:12px;color:#6b7280;margin-top:5px">Estimated resolution: ' +
+          '<b style="' + rpCls + '">' + escapeHtml(rpRange) + '</b>' +
+          ' &middot; <span style="font-style:italic">' + escapeHtml(rp.note) + '</span></div>';
+      }
+      html += '<div style="margin-top:10px">' +
+        '<button id="handoff-btn" style="background:none;border:1px solid #c8c6c4;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:#374151">Generate Handoff Note &#8595;</button>' +
+        '</div>' +
+        '<div id="handoff-detail" style="display:none;margin-top:8px">' +
+          '<pre id="handoff-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0"></pre>' +
+          '<button id="handoff-copy" style="margin-top:6px;background:none;border:1px solid #0078d4;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#0078d4">Copy to clipboard</button>' +
+        '</div>';
       if (workflow) {
         var steps = (workflow.steps || []).map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join("");
         html += '<div class="workflow-box"><b>Suggested workflow:</b> ' + escapeHtml(workflow.title) + '<ol>' + steps + '</ol></div>';
@@ -308,6 +333,75 @@
       el.innerHTML = html;
       renderFeedbackPrompt();
       wireDynamicHandlers(data);
+    }
+
+    function buildHandoffNote(data) {
+      var es = data.executive_summary || {};
+      var assign = data.recommended_assignment || {};
+      var eng = assign.engineer || {};
+      var sla = data.sla || {};
+      var kbDocs = data.kb_recommendations || [];
+      var workflow = data.suggested_workflow;
+      var caseNum = (data.case && data.case.ticket_number) || "";
+      var sep = "=".repeat(48);
+      var lines = ["HANDOFF NOTE — " + caseNum, sep, ""];
+      lines.push("TICKET: " + ((data.case && data.case.title) || ""));
+      lines.push("");
+      lines.push("CURRENT SITUATION:");
+      lines.push((es.current_issue || "Under investigation").slice(0, 350));
+      lines.push("");
+      lines.push("PROBABLE CAUSE:");
+      lines.push(es.probable_cause || "Under investigation");
+      lines.push("");
+      if (eng.name) lines.push("ASSIGNED TO: " + eng.name + " (" + (eng.team || "") + ")");
+      if (sla.tier) {
+        var mins = sla.minutes_to_resolution_deadline;
+        lines.push("SLA: " + sla.tier + " — " +
+          (mins >= 0 ? mins + " min remaining" : "OVERDUE by " + (-mins) + " min"));
+      }
+      if (data.resolution_prediction) {
+        var rp = data.resolution_prediction;
+        lines.push("EST. RESOLUTION: ~" + rp.range_low + "–" + rp.range_high + " " + rp.unit);
+      }
+      lines.push("");
+      if (kbDocs.length) {
+        lines.push("KB ARTICLES CONSULTED:");
+        kbDocs.forEach(function(d) { lines.push("  • " + d.title); });
+        lines.push("");
+      }
+      if (workflow && (workflow.steps || []).length) {
+        lines.push("SUGGESTED NEXT STEPS:");
+        (workflow.steps || []).forEach(function(s, i) { lines.push("  " + (i + 1) + ". " + s); });
+      }
+      return lines.join("\n");
+    }
+
+    function buildKbDraft(data) {
+      var es = data.executive_summary || {};
+      var workflow = data.suggested_workflow;
+      var title = (data.case && data.case.title) || "New Issue";
+      var lines = ["# " + title + " — Resolution Guide", ""];
+      lines.push("**Category:** [Classify this issue type]");
+      lines.push("**Success rate:** [Track after N resolutions]");
+      lines.push("");
+      lines.push("## Problem Description");
+      lines.push((es.current_issue || "[Describe the symptom the customer sees]").slice(0, 400));
+      lines.push("");
+      lines.push("## Root Cause");
+      lines.push(es.probable_cause || "[Document confirmed root cause after resolution]");
+      lines.push("");
+      lines.push("## Resolution Steps");
+      if (workflow && (workflow.steps || []).length) {
+        (workflow.steps || []).forEach(function(s, i) { lines.push((i + 1) + ". " + s); });
+      } else {
+        lines.push("1. [Step 1: initial diagnostic check]");
+        lines.push("2. [Step 2: apply fix]");
+        lines.push("3. [Step 3: verify resolution]");
+      }
+      lines.push("");
+      lines.push("## Notes");
+      lines.push("[Any caveats, version-specific behaviour, or related issues to watch for]");
+      return lines.join("\n");
     }
 
     function wireDynamicHandlers(data) {
@@ -356,6 +450,59 @@
           stepsEl.innerHTML = '<div class="kb-wf-box"><b>' + escapeHtml(doc.workflow_title || "Suggested workflow") +
             "</b><ol>" + stepsHtml + "</ol></div>";
           btn.textContent = "Hide steps →";
+        });
+      }
+
+      var mgrLink = document.getElementById("mgr-link");
+      if (mgrLink) mgrLink.href = BASE + "/d365/manager_dashboard.html";
+
+      var handoffBtn = el.querySelector("#handoff-btn");
+      if (handoffBtn) {
+        handoffBtn.addEventListener("click", function () {
+          var detail = document.getElementById("handoff-detail");
+          if (!detail) return;
+          if (detail.style.display !== "none") {
+            detail.style.display = "none";
+            handoffBtn.textContent = "Generate Handoff Note ↓";
+            return;
+          }
+          document.getElementById("handoff-text").textContent = buildHandoffNote(data);
+          detail.style.display = "block";
+          handoffBtn.textContent = "Hide Handoff Note ↑";
+        });
+      }
+      var handoffCopy = el.querySelector("#handoff-copy");
+      if (handoffCopy) {
+        handoffCopy.addEventListener("click", function () {
+          var txt = document.getElementById("handoff-text");
+          if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function () {});
+          handoffCopy.textContent = "Copied!";
+          setTimeout(function () { handoffCopy.textContent = "Copy to clipboard"; }, 1500);
+        });
+      }
+
+      var kbDraftBtn = el.querySelector("#kb-draft-btn");
+      if (kbDraftBtn) {
+        kbDraftBtn.addEventListener("click", function () {
+          var detail = document.getElementById("kb-draft-detail");
+          if (!detail) return;
+          if (detail.style.display !== "none") {
+            detail.style.display = "none";
+            kbDraftBtn.textContent = "Draft KB Article ↓";
+            return;
+          }
+          document.getElementById("kb-draft-text").textContent = buildKbDraft(data);
+          detail.style.display = "block";
+          kbDraftBtn.textContent = "Hide Draft ↑";
+        });
+      }
+      var kbDraftCopy = el.querySelector("#kb-draft-copy");
+      if (kbDraftCopy) {
+        kbDraftCopy.addEventListener("click", function () {
+          var txt = document.getElementById("kb-draft-text");
+          if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function () {});
+          kbDraftCopy.textContent = "Copied!";
+          setTimeout(function () { kbDraftCopy.textContent = "Copy to clipboard"; }, 1500);
         });
       }
 

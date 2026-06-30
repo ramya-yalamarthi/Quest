@@ -381,6 +381,66 @@ def get_recommendation(case: str):
         return f"<p style='font-family:Segoe UI,Arial'>Could not load recommendation: {exc}</p>"
 
 
+def _compute_resolution_prediction(similar_incidents: list, kb_docs: list) -> dict | None:
+    """Estimate resolution time from the top KB doc's workflow availability
+    and top similar-case match confidence. Workflow-guided = engineer has
+    clear steps = faster; manual = needs investigation = slower."""
+    top_kb = kb_docs[0] if kb_docs else None
+    if not top_kb:
+        return None
+    if top_kb.get("workflow_available"):
+        low, high, unit, basis = 15, 45, "min", "Workflow-guided resolution"
+    else:
+        low, high, unit, basis = 1, 4, "hr", "Manual investigation required"
+    top_sim = similar_incidents[0] if similar_incidents else None
+    sim_score = float((top_sim or {}).get("display_score", 0))
+    if sim_score >= 0.80:
+        confidence, note = "high", f"{round(sim_score * 100)}% similar resolved case found"
+    elif sim_score >= 0.55:
+        confidence, note = "medium", "Moderately similar past cases found"
+    else:
+        confidence, note = "low", "Novel issue — estimate may vary"
+    return {"range_low": low, "range_high": high, "unit": unit, "basis": basis,
+            "confidence": confidence, "note": note,
+            "workflow_guided": top_kb.get("workflow_available", False)}
+
+
+def _compute_ticket_risk(ticket: dict, now) -> dict:
+    """Heuristic risk score from priority, age, and severity keywords -- no API
+    calls or embeddings, so it runs for every open ticket in the dashboard."""
+    score = 0.0
+    signals = []
+    priority = ticket.get("priority", 2)
+    if priority == 1:
+        score += 0.4
+        signals.append("High priority")
+    created_on = ticket.get("created_on")
+    age_hours = 0.0
+    if created_on:
+        try:
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(str(created_on).replace("Z", "+00:00"))
+            age_hours = (now - dt).total_seconds() / 3600
+        except Exception:
+            pass
+    if age_hours >= 12:
+        score += 0.4
+        signals.append(f"Open {int(age_hours)}h")
+    elif age_hours >= 4:
+        score += 0.2
+        signals.append(f"Open {int(age_hours)}h")
+    elif age_hours >= 0.5:
+        signals.append(f"Open {round(age_hours, 1)}h")
+    text = ((ticket.get("title") or "") + " " + (ticket.get("description") or "")[:200]).lower()
+    severity_kw = ["outage", "down", "critical", "failing", "stuck", "failed", "broke", "error"]
+    if any(k in text for k in severity_kw):
+        score += 0.2
+        signals.append("Severity keywords detected")
+    score = min(round(score, 4), 1.0)
+    level = "high" if score >= 0.5 else ("medium" if score >= 0.2 else "low")
+    return {"score": score, "level": level, "signals": signals, "age_hours": round(age_hours, 1)}
+
+
 _ESCALATION_KEYWORDS = [
     "escalate", "escalation", "manager", "supervisor", "urgent", "unacceptable",
     "disappointed", "frustrated", "complaint", "terrible", "legal", "cancel",
@@ -568,6 +628,7 @@ def get_recommendation_data(case: str):
         "auto_resolve": auto_resolve,
         "cluster": cluster,
         "escalation_risk": escalation,
+        "resolution_prediction": _compute_resolution_prediction(similar_incidents, kb["docs"]),
         "recommended_assignment": {
             "team": r.get("recommended_team"), "team_confidence": r.get("confidence"),
             "engineer": eng or None,
@@ -673,3 +734,31 @@ def refine_recommendation(case: str, comment: str = ""):
         return note
     except Exception as exc:
         return f"<p style='font-family:Segoe UI,Arial'>Could not refine: {exc}</p>"
+
+
+@router.get("/manager-dashboard")
+def get_manager_dashboard():
+    """Queue-level view for managers: all open tickets ranked by risk score
+    (priority + age + severity keywords). Pure heuristic — no LLM or embedding
+    calls, so it returns fast enough for a live manager refresh."""
+    from datetime import datetime, timezone
+    from app.orchestrator.dataverse import DataverseClient, available
+    if not available():
+        raise HTTPException(status_code=503, detail="Dataverse not configured")
+    client = DataverseClient()
+    org_base = client.cfg["base"]
+    open_cases = client.list_cases(top=50, resolved_only=False)
+    tickets = [c for c in open_cases
+               if c.get("state") == 0
+               and not (c.get("title") or "").startswith("[k8s]")]
+    now = datetime.now(timezone.utc)
+    from app.orchestrator.d365_runner import case_url
+    result = []
+    for t in tickets:
+        risk = _compute_ticket_risk(t, now)
+        result.append({**t, "url": case_url(org_base, t.get("id")), "risk": risk})
+    result.sort(key=lambda x: (-x["risk"]["score"], -x["risk"].get("age_hours", 0)))
+    high_risk = sum(1 for r in result if r["risk"]["level"] == "high")
+    medium_risk = sum(1 for r in result if r["risk"]["level"] == "medium")
+    return {"total_open": len(result), "high_risk": high_risk,
+            "medium_risk": medium_risk, "tickets": result}

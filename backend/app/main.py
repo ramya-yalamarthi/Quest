@@ -1,6 +1,8 @@
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.api.routers.health import router as health_router
 from app.api.routers.auth import router as auth_router
 from app.api.routers.tickets import router as tickets_router
@@ -32,6 +34,10 @@ def create_app() -> FastAPI:
     app.include_router(orchestrator_router)
     app.include_router(kb_router)
     app.include_router(manager_router)
+
+    d365_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "d365")
+    if os.path.isdir(d365_dir):
+        app.mount("/d365", StaticFiles(directory=d365_dir), name="d365")
 
     return app
 
