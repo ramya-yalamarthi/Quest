@@ -209,13 +209,29 @@
 
     function wireDynamicHandlers(data) {
       var el = document.getElementById("content");
+      var openTrendKey = null;
 
       var trendButtons = el.querySelectorAll("[data-trend]");
       for (var i = 0; i < trendButtons.length; i++) {
         trendButtons[i].addEventListener("click", function (e) {
-          var key = e.currentTarget.getAttribute("data-trend");
+          var btn = e.currentTarget;
+          var key = btn.getAttribute("data-trend");
+          var detailEl = document.getElementById("trend-detail");
+
+          if (openTrendKey === key) {                  // clicked the open one again -> close it
+            detailEl.innerHTML = "";
+            btn.textContent = "View incidents →";
+            openTrendKey = null;
+            return;
+          }
+          if (openTrendKey) {                           // switching -> reset the previously open button's label
+            var prevBtn = el.querySelector('[data-trend="' + openTrendKey + '"]');
+            if (prevBtn) prevBtn.textContent = "View incidents →";
+          }
           var bucket = (data.incident_trends || {})[key];
-          document.getElementById("trend-detail").innerHTML = trendDetailHtml(bucket);
+          detailEl.innerHTML = trendDetailHtml(bucket);
+          btn.textContent = "Hide incidents →";
+          openTrendKey = key;
         });
       }
 
