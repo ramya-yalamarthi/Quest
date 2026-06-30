@@ -381,6 +381,28 @@ def get_recommendation(case: str):
         return f"<p style='font-family:Segoe UI,Arial'>Could not load recommendation: {exc}</p>"
 
 
+def _kb_recommendations(team: str, title: str, description: str, top_k: int = 3) -> list:
+    """KB Recommendations cards for the popup: top_k articles from the static
+    catalog (app/orchestrator/kb_catalog.py -- keyword-matched, no database;
+    same approach as the suggested-workflow steps), each carrying its own
+    display confidence.
+
+    Confidence is NOT a similarity score -- it's "how much should you trust
+    acting on this doc": a doc with a documented step-by-step workflow is
+    safer to follow than a reference-only doc the engineer has to interpret
+    manually, so workflow_available pulls confidence UP and manual-only pulls
+    it DOWN, on top of the doc's proven success rate."""
+    from app.orchestrator.kb_catalog import match_kb_docs
+    docs = match_kb_docs(team, title, description, top_k=top_k)
+    out = []
+    for i, doc in enumerate(docs):
+        base = doc["success_rate"]
+        bump = 0.15 if doc["workflow_available"] else -0.10
+        confidence = max(0.05, min(0.97, base + bump))
+        out.append({**doc, "confidence": round(confidence, 4), "top_pick": i == 0})
+    return out
+
+
 @router.get("/recommendation-data")
 def get_recommendation_data(case: str):
     """Structured JSON for the rich card-based popup (incident trends with
@@ -416,6 +438,8 @@ def get_recommendation_data(case: str):
             "grounded": d.get("grounded", True),
             "pattern_detected": d.get("pattern_detected"),
         },
+        "kb_recommendations": _kb_recommendations(
+            r.get("recommended_team") or "", target.get("title") or "", target.get("description") or ""),
         "recommended_assignment": {
             "team": r.get("recommended_team"), "team_confidence": r.get("confidence"),
             "engineer": eng or None,

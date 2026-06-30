@@ -44,8 +44,16 @@
     .bullet-dot.blue { background: #2563eb; }
     .bullet-dot.orange { background: #f59e0b; }
     .bullet-lbl { font-weight: 600; font-size: 13.5px; color: #111827; }
-    .bullet-text { font-size: 13.5px; color: #374151; }
+    .bullet-text { font-size: 13.5px; color: #374151; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     .pattern-box { background: #eff6ff; border-left: 3px solid #2563eb; border-radius: 6px; padding: 10px 12px; font-size: 13px; color: #1e3a8a; margin-top: 4px; }
+
+    .kb-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+    .kb-card:last-child { margin-bottom: 0; }
+    .kb-title { font-weight: 600; font-size: 13.5px; }
+    .kb-meta { font-size: 12px; color: #6b7280; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+    .kb-wf-btn { cursor: pointer; border: none; font-family: inherit; }
+    .kb-wf-box { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin-top: 8px; font-size: 12.5px; }
+    .kb-wf-box ol { margin: 6px 0 0; padding-left: 18px; }
 
     .assign-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
     .assign-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -131,6 +139,34 @@
       return '<div class="trend-detail">' + rows + '</div>';
     }
 
+    function fmtAvgResolution(hrs) {
+      if (hrs === null || hrs === undefined || isNaN(hrs)) return null;
+      var h = parseFloat(hrs);
+      return h < 1 ? ("~" + Math.round(h * 60) + " min avg") : ("~" + h.toFixed(1) + "h avg");
+    }
+
+    function kbCardHtml(doc, idx) {
+      var titleHtml = doc.url
+        ? '<a href="' + escapeHtml(doc.url) + '" data-extlink="1">' + escapeHtml(doc.title) + '</a>'
+        : escapeHtml(doc.title);
+      var meta = [];
+      if (doc.success_rate !== null && doc.success_rate !== undefined) {
+        meta.push(Math.round(doc.success_rate * 100) + "% resolved");
+      }
+      var avg = fmtAvgResolution(doc.avg_resolution_hours);
+      if (avg) meta.push(avg);
+      var pills = [];
+      if (doc.top_pick) pills.push('<span class="pill pill-blue">Top pick</span>');
+      pills.push((doc.workflow_available && (doc.workflow_steps || []).length)
+        ? '<button class="pill pill-green kb-wf-btn" data-kbwf="' + idx + '">Workflow available &rarr;</button>'
+        : '<span class="pill pill-gray">Manual only</span>');
+      return '<div class="kb-card">' +
+        '<div class="row-between" style="margin-bottom:0"><div class="kb-title">' + titleHtml + '</div>' + confidencePill(doc.confidence) + '</div>' +
+        '<div class="kb-meta">' + escapeHtml(meta.join(" · ")) + pills.join("") + '</div>' +
+        '<div class="kb-wf-steps" id="kb-wf-' + idx + '"></div>' +
+        '</div>';
+    }
+
     function assignCardHtml(eng) {
       var initials = (eng.name || "?").split(/\s+/).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase();
       var shiftLbl = eng.on_shift ? "On shift" : (eng.on_call ? "On-call" : "Off shift");
@@ -183,6 +219,13 @@
       }
       html += '<div class="divider"></div>';
 
+      var kbDocs = data.kb_recommendations || [];
+      if (kbDocs.length) {
+        html += '<div class="section-label" style="margin-bottom:10px">KNOWLEDGE BASE RECOMMENDATIONS</div>';
+        html += kbDocs.map(function (d, i) { return kbCardHtml(d, i); }).join("");
+        html += '<div class="divider"></div>';
+      }
+
       if (eng.name) {
         html += '<div class="row-between"><span class="section-label">RECOMMENDED ASSIGNMENT</span>' + confidencePill(eng.confidence) + '</div>';
         html += assignCardHtml(eng);
@@ -232,6 +275,27 @@
           detailEl.innerHTML = trendDetailHtml(bucket);
           btn.textContent = "Hide incidents →";
           openTrendKey = key;
+        });
+      }
+
+      var kbWfButtons = el.querySelectorAll("[data-kbwf]");
+      for (var k = 0; k < kbWfButtons.length; k++) {
+        kbWfButtons[k].addEventListener("click", function (e) {
+          var btn = e.currentTarget;
+          var idx = btn.getAttribute("data-kbwf");
+          var stepsEl = document.getElementById("kb-wf-" + idx);
+          if (!stepsEl) return;
+          if (stepsEl.innerHTML) {                 // already open -> close it
+            stepsEl.innerHTML = "";
+            btn.textContent = "Workflow available →";
+            return;
+          }
+          var doc = (data.kb_recommendations || [])[parseInt(idx, 10)] || {};
+          var steps = doc.workflow_steps || [];
+          var stepsHtml = steps.map(function (s) { return "<li>" + escapeHtml(s) + "</li>"; }).join("");
+          stepsEl.innerHTML = '<div class="kb-wf-box"><b>' + escapeHtml(doc.workflow_title || "Suggested workflow") +
+            "</b><ol>" + stepsHtml + "</ol></div>";
+          btn.textContent = "Hide steps →";
         });
       }
 
