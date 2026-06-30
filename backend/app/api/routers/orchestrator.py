@@ -736,6 +736,16 @@ def refine_recommendation(case: str, comment: str = ""):
         return f"<p style='font-family:Segoe UI,Arial'>Could not refine: {exc}</p>"
 
 
+@router.get("/manager-dashboard-ui", response_class=HTMLResponse)
+def get_manager_dashboard_ui():
+    """Serves the manager dashboard HTML page directly (avoids static-file path issues)."""
+    import pathlib
+    html_path = (pathlib.Path(__file__).parent.parent.parent.parent / "d365" / "manager_dashboard.html")
+    if not html_path.is_file():
+        raise HTTPException(status_code=404, detail="Dashboard page not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
 @router.get("/manager-dashboard")
 def get_manager_dashboard():
     """Queue-level view for managers: all open tickets ranked by risk score

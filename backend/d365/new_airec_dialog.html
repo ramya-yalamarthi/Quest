@@ -454,7 +454,14 @@
       }
 
       var mgrLink = document.getElementById("mgr-link");
-      if (mgrLink) mgrLink.href = BASE + "/d365/manager_dashboard.html";
+      if (mgrLink) {
+        var mgrUrl = BASE + "/orchestrator/manager-dashboard-ui";
+        mgrLink.href = mgrUrl;
+        mgrLink.addEventListener("click", function(e) {
+          e.preventDefault();
+          openExternal(mgrUrl);
+        });
+      }
 
       var handoffBtn = el.querySelector("#handoff-btn");
       if (handoffBtn) {
