@@ -381,6 +381,99 @@ def get_recommendation(case: str):
         return f"<p style='font-family:Segoe UI,Arial'>Could not load recommendation: {exc}</p>"
 
 
+_ESCALATION_KEYWORDS = [
+    "escalate", "escalation", "manager", "supervisor", "urgent", "unacceptable",
+    "disappointed", "frustrated", "complaint", "terrible", "legal", "cancel",
+]
+
+
+def _cluster_open_tickets(client, target: dict, org_base: str = "",
+                           threshold: float = 0.55, top: int = 25) -> None | dict:
+    """Find other currently open tickets that are significantly similar to the
+    target, suggesting they share the same root cause. Returns None (silently)
+    if embeddings aren't configured, no open tickets exist, or nothing clears
+    the similarity threshold -- so the section never appears for a lone ticket."""
+    try:
+        from app.orchestrator.similarity import rank_similar
+        from app.orchestrator.d365_runner import case_url
+        open_cases = client.list_cases(top=top, resolved_only=False)
+        others = [c for c in open_cases
+                  if c.get("id") != target.get("id")
+                  and c.get("state") == 0
+                  and not (c.get("title") or "").startswith("[k8s]")]
+        if not others:
+            return None
+        ranked = rank_similar(target, others, top_k=len(others), min_score=0.0)
+        matches = [r for r in ranked if r.get("display_score", 0) >= threshold]
+        if not matches:
+            return None
+        tickets = [
+            {"ticket_number": m.get("ticket_number"), "title": m.get("title"),
+             "url": case_url(org_base, m.get("id")),
+             "match_score": round(float(m.get("display_score", 0)), 4)}
+            for m in matches[:5]
+        ]
+        return {"count": len(matches), "tickets": tickets}
+    except Exception:
+        return None
+
+
+def _escalation_risk(client, target: dict) -> None | dict:
+    """Predict escalation risk from the case's note history and ticket metadata.
+    Returns None when there are no risk signals (no section shown for quiet tickets).
+    Never raises -- if Dataverse notes can't be fetched, returns None silently."""
+    try:
+        from datetime import datetime, timezone, timedelta
+        case_id = target.get("id")
+        if not case_id:
+            return None
+        notes = client.list_case_notes(case_id, top=30)
+        customer_notes = [n for n in notes
+                          if not (n.get("subject") or "").startswith("AI ")]
+        signals = []
+        score = 0.0
+
+        all_text = " ".join((n.get("notetext") or "") for n in customer_notes).lower()
+        found_kw = [k for k in _ESCALATION_KEYWORDS if k in all_text]
+        if found_kw:
+            signals.append(f"Escalation language detected: {', '.join(found_kw[:3])}")
+            score += 0.4
+
+        if len(customer_notes) >= 4:
+            signals.append(f"{len(customer_notes)} follow-up messages on this ticket")
+            score += 0.3
+        elif len(customer_notes) >= 2:
+            signals.append(f"{len(customer_notes)} follow-up messages on this ticket")
+            score += 0.15
+
+        now = datetime.now(timezone.utc)
+        recent = []
+        for n in customer_notes:
+            cd = n.get("createdon")
+            if cd:
+                try:
+                    dt = datetime.fromisoformat(str(cd).replace("Z", "+00:00"))
+                    if dt >= now - timedelta(hours=24):
+                        recent.append(n)
+                except Exception:
+                    pass
+        if len(recent) >= 3:
+            signals.append(f"{len(recent)} messages in the last 24 hours")
+            score += 0.25
+
+        if target.get("priority") == 1:
+            signals.append("High priority ticket")
+            score += 0.1
+
+        score = min(round(score, 4), 1.0)
+        if not signals:
+            return None
+        level = "high" if score >= 0.5 else ("medium" if score >= 0.25 else "low")
+        return {"level": level, "score": score, "signals": signals}
+    except Exception:
+        return None
+
+
 def _kb_recommendations(team: str, title: str, description: str, top_k: int = 3) -> dict:
     """KB Recommendations cards for the popup: top_k articles from the static
     catalog, keyword-matched against the routed team + ticket text (same
@@ -427,6 +520,9 @@ def get_recommendation_data(case: str):
     kb = _kb_recommendations(
         r.get("recommended_team") or "", target.get("title") or "", target.get("description") or "")
 
+    cluster = _cluster_open_tickets(client, target, org_base=client.cfg["base"])
+    escalation = _escalation_risk(client, target)
+
     # Auto-resolve: top similar case with >= 90% display score is near-identical
     # -- surface it so the engineer can apply the same resolution in one step.
     similar_incidents = d.get("similar_incidents") or []
@@ -470,6 +566,8 @@ def get_recommendation_data(case: str):
         "kb_recommendations": kb["docs"],
         "kb_gap_detected": kb["gap_detected"],
         "auto_resolve": auto_resolve,
+        "cluster": cluster,
+        "escalation_risk": escalation,
         "recommended_assignment": {
             "team": r.get("recommended_team"), "team_confidence": r.get("confidence"),
             "engineer": eng or None,

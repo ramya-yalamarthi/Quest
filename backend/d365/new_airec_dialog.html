@@ -206,7 +206,16 @@
       html += '<div id="trend-detail"></div>';
       html += '<div class="divider"></div>';
 
-      html += '<div class="row-between"><span class="section-label">EXECUTIVE SUMMARY</span>' + confidencePill(es.confidence) + '</div>';
+      var escalation = data.escalation_risk;
+      var escalationBadge = "";
+      if (escalation) {
+        var eLvl = escalation.level;
+        var eCls = eLvl === "high" ? "pill-red" : (eLvl === "medium" ? "pill-amber" : "pill-gray");
+        var eIcon = eLvl === "high" ? "&#9888; " : (eLvl === "medium" ? "&#9888; " : "");
+        escalationBadge = '<span class="pill ' + eCls + '" title="' + escapeHtml((escalation.signals || []).join(" · ")) + '">' +
+          eIcon + "ESCALATION RISK: " + eLvl.toUpperCase() + '</span>';
+      }
+      html += '<div class="row-between"><span class="section-label">EXECUTIVE SUMMARY</span><div style="display:flex;gap:6px;align-items:center">' + escalationBadge + confidencePill(es.confidence) + '</div></div>';
       if (es.current_issue) {
         html += '<div class="bullet-row"><div class="bullet-dot blue"></div><div>' +
           '<div class="bullet-lbl">Current issue</div><div class="bullet-text">' + escapeHtml(es.current_issue) + '</div></div></div>';
@@ -218,7 +227,29 @@
       if (es.pattern_detected) {
         html += '<div class="pattern-box"><b>Pattern detected:</b> ' + escapeHtml(es.pattern_detected) + '</div>';
       }
+      if (escalation && (escalation.signals || []).length) {
+        var eLvlColor = escalation.level === "high" ? "#b91c1c" : (escalation.level === "medium" ? "#92400e" : "#475569");
+        var eLvlBg = escalation.level === "high" ? "#fff1f2" : (escalation.level === "medium" ? "#fffbeb" : "#f8fafc");
+        var eLvlBorder = escalation.level === "high" ? "#fca5a5" : (escalation.level === "medium" ? "#fde68a" : "#e5e7eb");
+        html += '<div style="background:' + eLvlBg + ';border-left:3px solid ' + eLvlBorder + ';border-radius:6px;padding:10px 12px;font-size:13px;color:' + eLvlColor + ';margin-top:8px">' +
+          '<b>Escalation signals:</b> ' + escapeHtml((escalation.signals || []).join(" · ")) + '</div>';
+      }
       html += '<div class="divider"></div>';
+
+      var cluster = data.cluster;
+      if (cluster && cluster.count) {
+        html += '<div class="section-label" style="margin-bottom:8px">RELATED OPEN TICKETS <span style="font-weight:400;text-transform:none;font-size:11px;color:#374151">— may share the same root cause</span></div>';
+        html += '<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px 14px;margin-bottom:4px">';
+        html += '<div style="font-size:12.5px;color:#6b21a8;font-weight:600;margin-bottom:8px">&#9650; ' + cluster.count + ' other open ticket' + (cluster.count > 1 ? 's' : '') + ' appear to share this root cause</div>';
+        (cluster.tickets || []).forEach(function(t) {
+          var pct = Math.round((t.match_score || 0) * 100);
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #e9d5ff;font-size:12.5px">' +
+            '<a href="' + escapeHtml(t.url || "#") + '" data-extlink="1" style="color:#7c3aed;font-weight:500">' + escapeHtml(t.ticket_number || "") + ' — ' + escapeHtml(t.title || "") + '</a>' +
+            '<span style="color:#6b21a8;font-size:11px;white-space:nowrap;margin-left:8px">' + pct + '% match</span>' +
+            '</div>';
+        });
+        html += '</div><div class="divider"></div>';
+      }
 
       var kbDocs = data.kb_recommendations || [];
       if (kbDocs.length) {
