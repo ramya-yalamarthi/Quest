@@ -237,6 +237,15 @@
         html += '<div style="background:' + eLvlBg + ';border-left:3px solid ' + eLvlBorder + ';border-radius:6px;padding:10px 12px;font-size:13px;color:' + eLvlColor + ';margin-top:8px">' +
           '<b>Escalation signals:</b> ' + escapeHtml((escalation.signals || []).join(" · ")) + '</div>';
       }
+      if (escalation && (escalation.level === "high" || escalation.level === "medium")) {
+        html += '<div style="margin-top:8px">' +
+          '<button id="l1l2-btn" style="background:#7c3aed;color:#fff;border:none;border-radius:999px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Generate L1 → L2 Handover &#8595;</button>' +
+          '</div>' +
+          '<div id="l1l2-detail" style="display:none;margin-top:8px">' +
+            '<pre id="l1l2-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:12px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0;color:#374151"></pre>' +
+            '<button id="l1l2-copy" style="margin-top:6px;background:none;border:1px solid #7c3aed;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#7c3aed">Copy to clipboard</button>' +
+          '</div>';
+      }
       if (data.missing_info && (data.missing_info.missing_fields || []).length) {
         html += '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px 14px;margin-top:8px">' +
           '<div style="font-size:12.5px;font-weight:600;color:#c2410c;margin-bottom:6px">&#9888; Missing information detected</div>' +
@@ -403,6 +412,72 @@
       return lines.join("\n");
     }
 
+    function buildEscalationHandover(data) {
+      var es = data.executive_summary || {};
+      var assign = data.recommended_assignment || {};
+      var eng = assign.engineer || {};
+      var sla = data.sla || {};
+      var kbDocs = data.kb_recommendations || [];
+      var workflow = data.suggested_workflow;
+      var escalation = data.escalation_risk || {};
+      var l1 = data.line1_context || {};
+      var caseNum = (data.case && data.case.ticket_number) || "";
+      var sep = "=".repeat(48);
+      var lines = ["L1 → L2 ESCALATION HANDOVER — " + caseNum, sep, ""];
+      lines.push("TICKET: " + ((data.case && data.case.title) || ""));
+      lines.push("");
+      lines.push("── WHAT LINE 1 UNDERSTOOD ──");
+      lines.push((es.current_issue || "Under investigation").slice(0, 350));
+      lines.push("");
+      lines.push("PROBABLE CAUSE (Line 1 assessment):");
+      lines.push(es.probable_cause || "Not determined at Line 1 level");
+      lines.push("");
+      if (l1.tried && l1.tried.length) {
+        lines.push("── WHAT LINE 1 ALREADY TRIED ──");
+        l1.tried.forEach(function(note, i) { lines.push((i + 1) + ". " + note); });
+        lines.push("");
+      } else {
+        lines.push("── WHAT LINE 1 ALREADY TRIED ──");
+        lines.push("No engineer notes recorded — ticket may be newly created.");
+        lines.push("");
+      }
+      if (kbDocs.length) {
+        lines.push("KB ARTICLES CONSULTED AT LINE 1:");
+        kbDocs.forEach(function(d) { lines.push("  • " + d.title + " (" + Math.round(d.success_rate * 100) + "% resolved)"); });
+        lines.push("");
+      }
+      if (workflow) {
+        lines.push("WORKFLOW AVAILABLE (not yet completed):");
+        lines.push("  " + workflow.title);
+        lines.push("");
+      }
+      lines.push("── WHY ESCALATION IS NEEDED ──");
+      if ((escalation.signals || []).length) {
+        escalation.signals.forEach(function(s) { lines.push("  • " + s); });
+      } else {
+        lines.push("  • Ticket unresolved beyond expected window");
+      }
+      lines.push("");
+      if (sla.tier) {
+        var mins = sla.minutes_to_resolution_deadline;
+        lines.push("SLA STATUS: " + sla.tier + " — " +
+          (mins >= 0 ? mins + " min remaining" : "OVERDUE by " + (-mins) + " min"));
+        lines.push("");
+      }
+      lines.push("── SUGGESTED NEXT STEPS FOR LINE 2 ──");
+      if (workflow && (workflow.steps || []).length) {
+        (workflow.steps || []).forEach(function(s, i) { lines.push("  " + (i + 1) + ". " + s); });
+      } else {
+        lines.push("  1. Review Line 1 notes above and continue investigation");
+        lines.push("  2. Engage specialist or escalate further if root cause confirmed");
+      }
+      if (eng.name) {
+        lines.push("");
+        lines.push("RECOMMENDED ENGINEER FOR LINE 2: " + eng.name + " (" + (eng.team || "") + ")");
+      }
+      return lines.join("\n");
+    }
+
     function buildKbDraft(data) {
       var es = data.executive_summary || {};
       var workflow = data.suggested_workflow;
@@ -477,6 +552,31 @@
           stepsEl.innerHTML = '<div class="kb-wf-box"><b>' + escapeHtml(doc.workflow_title || "Suggested workflow") +
             "</b><ol>" + stepsHtml + "</ol></div>";
           btn.textContent = "Hide steps →";
+        });
+      }
+
+      var l1l2Btn = el.querySelector("#l1l2-btn");
+      if (l1l2Btn) {
+        l1l2Btn.addEventListener("click", function() {
+          var detail = document.getElementById("l1l2-detail");
+          if (!detail) return;
+          if (detail.style.display !== "none") {
+            detail.style.display = "none";
+            l1l2Btn.textContent = "Generate L1 → L2 Handover ↓";
+            return;
+          }
+          document.getElementById("l1l2-text").textContent = buildEscalationHandover(data);
+          detail.style.display = "block";
+          l1l2Btn.textContent = "Hide Handover ↑";
+        });
+      }
+      var l1l2Copy = el.querySelector("#l1l2-copy");
+      if (l1l2Copy) {
+        l1l2Copy.addEventListener("click", function() {
+          var txt = document.getElementById("l1l2-text");
+          if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function() {});
+          l1l2Copy.textContent = "Copied!";
+          setTimeout(function() { l1l2Copy.textContent = "Copy to clipboard"; }, 1500);
         });
       }
 

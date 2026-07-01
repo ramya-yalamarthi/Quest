@@ -478,6 +478,25 @@ def _detect_missing_info(ticket: dict) -> dict | None:
     return {"missing_fields": missing, "suggested_email": email}
 
 
+def _line1_context(client, target: dict) -> dict | None:
+    """Read human-written case notes to surface what Line 1 has already tried.
+    Returns None if no notes exist (ticket is brand new / unopened)."""
+    try:
+        case_id = target.get("id")
+        if not case_id:
+            return None
+        notes = client.list_case_notes(case_id, top=15)
+        human = [n for n in notes
+                 if not (n.get("subject") or "").startswith("AI ")
+                 and (n.get("notetext") or "").strip()]
+        if not human:
+            return None
+        tried = [(n.get("notetext") or "").strip()[:300] for n in human[:3]]
+        return {"note_count": len(human), "tried": tried}
+    except Exception:
+        return None
+
+
 def _customer_comm_gap(client, target: dict) -> dict | None:
     try:
         from datetime import datetime, timezone
@@ -641,6 +660,7 @@ def get_recommendation_data(case: str):
     escalation = _escalation_risk(client, target)
     missing_info = _detect_missing_info(target)
     comm_gap = _customer_comm_gap(client, target)
+    line1_ctx = _line1_context(client, target)
 
     # Auto-resolve: top similar case with >= 90% display score is near-identical
     # -- surface it so the engineer can apply the same resolution in one step.
@@ -695,6 +715,7 @@ def get_recommendation_data(case: str):
         "sla": sla_obj,
         "missing_info": missing_info,
         "customer_comm_gap": comm_gap,
+        "line1_context": line1_ctx,
         "suggested_workflow": advisory.get("suggested_workflow"),
         "feedback": {
             "like_url": advisory.get("feedback_like_url"),
