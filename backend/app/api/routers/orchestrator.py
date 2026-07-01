@@ -446,6 +446,63 @@ _ESCALATION_KEYWORDS = [
     "disappointed", "frustrated", "complaint", "terrible", "legal", "cancel",
 ]
 
+# Fields checked for presence in ticket text; label → keywords that confirm it's present
+_MISSING_INFO_CHECKS = [
+    ("cluster name or ID", ["cluster name", "cluster id", "clusterid", "cluster:"]),
+    ("Karpenter version", ["karpenter v", "version:", "karpenter version", "v0.", "v1."]),
+    ("cloud provider region", ["us-east", "us-west", "eu-west", "eu-central", "ap-southeast",
+                                "ap-northeast", "ap-south", "region:", "region "]),
+    ("NodePool or EC2NodeClass name", ["nodepool", "node pool", "ec2nodeclass", "nodeclaim"]),
+    ("error logs or kubectl output", ["kubectl", "error:", "failed:", "exception",
+                                       "traceback", "logs:", "stderr", "output:"]),
+]
+
+
+def _detect_missing_info(ticket: dict) -> dict | None:
+    haystack = f"{ticket.get('title') or ''} {ticket.get('description') or ''}".lower()
+    missing = [label for label, kws in _MISSING_INFO_CHECKS if not any(k in haystack for k in kws)]
+    raw_desc = (ticket.get("description") or "").strip()
+    if len(raw_desc) < 120 and not missing:
+        missing.append("detailed description (current description is too brief to diagnose)")
+    if not missing:
+        return None
+    ticket_num = ticket.get("ticket_number") or ""
+    fields_list = "\n".join(f"  • {f.capitalize()}" for f in missing)
+    email = (
+        f"Hi,\n\nThank you for contacting support regarding case {ticket_num}.\n\n"
+        f"To investigate this issue efficiently, could you please provide the following details:\n\n"
+        f"{fields_list}\n\n"
+        f"Once we have this information we will proceed with the investigation immediately.\n\n"
+        f"Best regards,\nSupport Team"
+    )
+    return {"missing_fields": missing, "suggested_email": email}
+
+
+def _customer_comm_gap(client, target: dict) -> dict | None:
+    try:
+        from datetime import datetime, timezone
+        case_id = target.get("id")
+        if not case_id:
+            return None
+        notes = client.list_case_notes(case_id, top=20)
+        human_notes = [n for n in notes if not (n.get("subject") or "").startswith("AI ")]
+        now = datetime.now(timezone.utc)
+        if not human_notes:
+            raw = target.get("created_on") or target.get("createdon")
+            if not raw:
+                return None
+            t = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            hrs = (now - t).total_seconds() / 3600
+            return {"hours_since_update": round(hrs, 1), "no_notes": True} if hrs >= 4 else None
+        raw = human_notes[0].get("createdon") or human_notes[0].get("created_on")
+        if not raw:
+            return None
+        t = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        hrs = (now - t).total_seconds() / 3600
+        return {"hours_since_update": round(hrs, 1), "no_notes": False} if hrs >= 4 else None
+    except Exception:
+        return None
+
 
 def _cluster_open_tickets(client, target: dict, org_base: str = "",
                            threshold: float = 0.55, top: int = 25) -> None | dict:
@@ -582,6 +639,8 @@ def get_recommendation_data(case: str):
 
     cluster = _cluster_open_tickets(client, target, org_base=client.cfg["base"])
     escalation = _escalation_risk(client, target)
+    missing_info = _detect_missing_info(target)
+    comm_gap = _customer_comm_gap(client, target)
 
     # Auto-resolve: top similar case with >= 90% display score is near-identical
     # -- surface it so the engineer can apply the same resolution in one step.
@@ -634,6 +693,8 @@ def get_recommendation_data(case: str):
             "engineer": eng or None,
         },
         "sla": sla_obj,
+        "missing_info": missing_info,
+        "customer_comm_gap": comm_gap,
         "suggested_workflow": advisory.get("suggested_workflow"),
         "feedback": {
             "like_url": advisory.get("feedback_like_url"),

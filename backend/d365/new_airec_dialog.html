@@ -217,14 +217,15 @@
         escalationBadge = '<span class="pill ' + eCls + '" title="' + escapeHtml((escalation.signals || []).join(" · ")) + '">' +
           eIcon + "ESCALATION RISK: " + eLvl.toUpperCase() + '</span>';
       }
-      html += '<div class="row-between"><span class="section-label">EXECUTIVE SUMMARY</span><div style="display:flex;gap:6px;align-items:center">' + escalationBadge + confidencePill(es.confidence) + '</div></div>';
+      html += '<div class="row-between"><span class="section-label">EXECUTIVE SUMMARY</span><div style="display:flex;gap:6px;align-items:center">' + escalationBadge + '</div></div>';
       if (es.current_issue) {
         html += '<div class="bullet-row"><div class="bullet-dot blue"></div><div>' +
           '<div class="bullet-lbl">Current issue</div><div class="bullet-text">' + escapeHtml(es.current_issue) + '</div></div></div>';
       }
       if (es.probable_cause) {
         html += '<div class="bullet-row"><div class="bullet-dot orange"></div><div>' +
-          '<div class="bullet-lbl">Probable cause</div><div class="bullet-text">' + escapeHtml(es.probable_cause) + '</div></div></div>';
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px"><div class="bullet-lbl">Probable cause</div>' + confidencePill(es.confidence) + '</div>' +
+          '<div class="bullet-text">' + escapeHtml(es.probable_cause) + '</div></div></div>';
       }
       if (es.pattern_detected) {
         html += '<div class="pattern-box"><b>Pattern detected:</b> ' + escapeHtml(es.pattern_detected) + '</div>';
@@ -236,20 +237,39 @@
         html += '<div style="background:' + eLvlBg + ';border-left:3px solid ' + eLvlBorder + ';border-radius:6px;padding:10px 12px;font-size:13px;color:' + eLvlColor + ';margin-top:8px">' +
           '<b>Escalation signals:</b> ' + escapeHtml((escalation.signals || []).join(" · ")) + '</div>';
       }
+      if (data.missing_info && (data.missing_info.missing_fields || []).length) {
+        html += '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px 14px;margin-top:8px">' +
+          '<div style="font-size:12.5px;font-weight:600;color:#c2410c;margin-bottom:6px">&#9888; Missing information detected</div>' +
+          '<ul style="margin:0 0 8px;padding-left:18px;font-size:12.5px;color:#374151">' +
+          data.missing_info.missing_fields.map(function(f) {
+            return '<li>' + escapeHtml(f.charAt(0).toUpperCase() + f.slice(1)) + '</li>';
+          }).join("") +
+          '</ul>' +
+          '<button id="missing-email-btn" style="background:none;border:1px solid #c2410c;border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer;font-family:inherit;color:#c2410c">Generate customer email &#8595;</button>' +
+          '<div id="missing-email-detail" style="display:none;margin-top:8px">' +
+            '<pre id="missing-email-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:12px;background:#fff;border:1px solid #fdba74;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0;color:#374151"></pre>' +
+            '<button id="missing-email-copy" style="margin-top:6px;background:none;border:1px solid #c2410c;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#c2410c">Copy to clipboard</button>' +
+          '</div>' +
+          '</div>';
+      }
       html += '<div class="divider"></div>';
 
       var cluster = data.cluster;
       if (cluster && cluster.count) {
+        var clusterTicketsHtml = (cluster.tickets || []).map(function(t) {
+          var matchPct = Math.round((t.match_score || 0) * 100);
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #e9d5ff;font-size:12.5px">' +
+            '<a href="' + escapeHtml(t.url || "#") + '" data-extlink="1" style="color:#7c3aed;font-weight:500">' + escapeHtml(t.ticket_number || "") + ' — ' + escapeHtml(t.title || "") + '</a>' +
+            '<span style="color:#6b21a8;font-size:11px;white-space:nowrap;margin-left:8px">' + matchPct + '% match</span>' +
+            '</div>';
+        }).join("");
         html += '<div class="section-label" style="margin-bottom:8px">RELATED OPEN TICKETS <span style="font-weight:400;text-transform:none;font-size:11px;color:#374151">— may share the same root cause</span></div>';
         html += '<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px 14px;margin-bottom:4px">';
-        html += '<div style="font-size:12.5px;color:#6b21a8;font-weight:600;margin-bottom:8px">&#9650; ' + cluster.count + ' other open ticket' + (cluster.count > 1 ? 's' : '') + ' appear to share this root cause</div>';
-        (cluster.tickets || []).forEach(function(t) {
-          var pct = Math.round((t.match_score || 0) * 100);
-          html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #e9d5ff;font-size:12.5px">' +
-            '<a href="' + escapeHtml(t.url || "#") + '" data-extlink="1" style="color:#7c3aed;font-weight:500">' + escapeHtml(t.ticket_number || "") + ' — ' + escapeHtml(t.title || "") + '</a>' +
-            '<span style="color:#6b21a8;font-size:11px;white-space:nowrap;margin-left:8px">' + pct + '% match</span>' +
-            '</div>';
-        });
+        html += '<button id="cluster-toggle" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;font-size:12.5px;color:#6b21a8;font-weight:600;padding:0;display:flex;align-items:center;gap:6px">' +
+          '<span id="cluster-arrow" style="font-size:10px">&#9654;</span>' +
+          '<span>' + cluster.count + ' other open ticket' + (cluster.count > 1 ? 's' : '') + ' appear to share this root cause — click to view</span>' +
+          '</button>';
+        html += '<div id="cluster-tickets" style="display:none;margin-top:8px">' + clusterTicketsHtml + '</div>';
         html += '</div><div class="divider"></div>';
       }
 
@@ -305,6 +325,13 @@
         html += '<div class="sla-line">SLA: <b>' + escapeHtml(sla.tier) + '</b> &middot; Resolution ' + clock +
                 (sla.resolution_breached ? ' &middot; <span style="color:#b91c1c">&#9888; SLA BREACHED</span>' : '') +
                 riskHtml + '</div>';
+      }
+      if (data.customer_comm_gap) {
+        var gap = data.customer_comm_gap;
+        html += '<div style="background:#fff1f2;border-left:3px solid #ef4444;border-radius:6px;padding:8px 12px;font-size:12.5px;color:#b91c1c;margin-top:8px">' +
+          '&#9888; <b>Customer not updated in ' + gap.hours_since_update + 'h</b>' +
+          (gap.no_notes ? ' — no updates have been sent since ticket creation.' : ' — send a status update now.') +
+          '</div>';
       }
       if (data.resolution_prediction) {
         var rp = data.resolution_prediction;
@@ -450,6 +477,43 @@
           stepsEl.innerHTML = '<div class="kb-wf-box"><b>' + escapeHtml(doc.workflow_title || "Suggested workflow") +
             "</b><ol>" + stepsHtml + "</ol></div>";
           btn.textContent = "Hide steps →";
+        });
+      }
+
+      var clusterToggle = el.querySelector("#cluster-toggle");
+      if (clusterToggle) {
+        clusterToggle.addEventListener("click", function() {
+          var tickets = document.getElementById("cluster-tickets");
+          var arrow = document.getElementById("cluster-arrow");
+          if (!tickets) return;
+          var open = tickets.style.display !== "none";
+          tickets.style.display = open ? "none" : "block";
+          if (arrow) arrow.innerHTML = open ? "&#9654;" : "&#9660;";
+        });
+      }
+
+      var missingEmailBtn = el.querySelector("#missing-email-btn");
+      if (missingEmailBtn) {
+        missingEmailBtn.addEventListener("click", function() {
+          var detail = document.getElementById("missing-email-detail");
+          if (!detail) return;
+          if (detail.style.display !== "none") {
+            detail.style.display = "none";
+            missingEmailBtn.textContent = "Generate customer email ↓";
+            return;
+          }
+          document.getElementById("missing-email-text").textContent = (data.missing_info || {}).suggested_email || "";
+          detail.style.display = "block";
+          missingEmailBtn.textContent = "Hide email ↑";
+        });
+      }
+      var missingEmailCopy = el.querySelector("#missing-email-copy");
+      if (missingEmailCopy) {
+        missingEmailCopy.addEventListener("click", function() {
+          var txt = document.getElementById("missing-email-text");
+          if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function() {});
+          missingEmailCopy.textContent = "Copied!";
+          setTimeout(function() { missingEmailCopy.textContent = "Copy to clipboard"; }, 1500);
         });
       }
 
