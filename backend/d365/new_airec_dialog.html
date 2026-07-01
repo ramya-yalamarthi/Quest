@@ -75,7 +75,7 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="head"><div class="avatar">AI</div><div><h2>AI Insights</h2><div class="sub" id="case-sub"></div></div>
+    <div class="head"><div class="avatar">AI</div><div><h2>AI Insights</h2><div class="sub" id="case-sub"></div><div id="sla-header" style="margin-top:4px"></div></div>
       <a id="mgr-link" href="#" data-extlink="1" style="margin-left:auto;font-size:11px;color:#0078d4;white-space:nowrap;text-decoration:none">Manager view &#8599;</a>
     </div>
     <div id="content" class="card">
@@ -196,6 +196,21 @@
 
       document.getElementById("case-sub").textContent =
         (data.case && data.case.ticket_number || "") + (data.case && data.case.title ? " · " + data.case.title : "");
+      var slaHeaderEl = document.getElementById("sla-header");
+      if (slaHeaderEl && sla) {
+        var hMins = sla.minutes_to_resolution_deadline;
+        var hClock = hMins >= 0 ? (hMins + " min left") : ("OVERDUE by " + (-hMins) + " min");
+        var hColor, hBg, hBorder;
+        if (sla.resolution_breached || sla.breach_risk === "critical") {
+          hColor = "#b91c1c"; hBg = "#fee2e2"; hBorder = "#fca5a5";
+        } else if (sla.breach_risk === "at_risk") {
+          hColor = "#92400e"; hBg = "#fef3c7"; hBorder = "#fde68a";
+        } else {
+          hColor = "#15803d"; hBg = "#dcfce7"; hBorder = "#86efac";
+        }
+        slaHeaderEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;background:' + hBg + ';border:1px solid ' + hBorder + ';color:' + hColor + ';padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700">' +
+          escapeHtml(sla.tier) + ' &middot; ' + escapeHtml(hClock) + '</span>';
+      }
 
       var html = "";
 
