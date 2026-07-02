@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quest — Single Slide</title>
+<style>
+  :root{
+    --navy:#1e2a5e; --sky:#3d7bf5; --ink:#2a3550; --label:#8b9bc4; --bg:#f5f7fc; --line:#dfe5f0;
+    --orange:#e0631a; --peach:#fdf5ee; --indigo:#5457c7; --lilac:#f1f0fb;
+    --green:#2f7d5b; --mint:#eef6ef; --red:#e23b4e;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  body{ font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--ink); }
+  @page{ size:1280px 720px; margin:0; }
+  .slide{ width:1280px; height:720px; background:var(--bg); display:flex; overflow:hidden; }
+
+  /* SIDEBAR */
+  .side{ width:262px; height:100%; background:var(--navy); color:#fff; padding:34px 30px; flex-shrink:0; }
+  .side .num{ font-size:52px; font-weight:800; color:var(--sky); line-height:1; }
+  .side h1{ font-size:23px; font-weight:800; margin-top:22px; line-height:1.22; }
+  .side .subtitle{ font-style:italic; color:#c3cdea; font-size:13px; margin-top:13px; line-height:1.45; }
+  .side .sec{ margin-top:20px; }
+  .side .sec .lab{ font-size:10px; letter-spacing:1.4px; font-weight:700; color:var(--label); text-transform:uppercase; }
+  .side .sec .val{ font-size:13.5px; color:#fff; margin-top:5px; line-height:1.38; }
+
+  /* MAIN */
+  .main{ flex:1; padding:22px 26px 0; display:flex; flex-direction:column; }
+  .row{ display:flex; gap:14px; }
+  .card{ border-radius:8px; padding:11px 15px; border:1px solid var(--line); }
+  .card .h{ font-size:10.5px; letter-spacing:1.3px; font-weight:800; text-transform:uppercase; margin-bottom:5px; }
+  .card p{ font-size:11.8px; line-height:1.42; color:#3c485f; }
+  .prob{ background:var(--peach); border-color:#f4dcc6; flex:1; }
+  .prob .h{ color:var(--orange); }
+  .obj{ background:var(--lilac); border-color:#dcd9f3; flex:1; }
+  .obj .h{ color:var(--indigo); }
+  .sol{ background:var(--mint); border-color:#cfe4d6; margin-top:11px; }
+  .sol .h{ color:var(--green); }
+
+  .chips-lab{ font-size:10px; letter-spacing:1.5px; font-weight:800; color:#9aa6c0; text-transform:uppercase; margin:14px 0 8px; }
+  .chips{ display:flex; gap:10px; }
+  .chip{ background:#fff; border:1.4px solid #c9d3ea; color:var(--navy); font-weight:700; font-size:11.5px; padding:6px 15px; border-radius:7px; }
+
+  .cols{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:14px; }
+  .col .bar{ background:var(--navy); color:#fff; text-align:center; font-weight:800; font-size:12px; letter-spacing:.5px; padding:8px; border-radius:6px; }
+  .col ul{ list-style:none; margin-top:9px; }
+  .col li{ position:relative; padding-left:14px; font-size:11px; line-height:1.34; color:#42506b; margin-bottom:7px; }
+  .col li::before{ content:"•"; position:absolute; left:1px; color:var(--navy); font-weight:800; }
+
+  /* PHASES STRIP */
+  .ph-lab{ font-size:10px; letter-spacing:1.5px; font-weight:800; color:#9aa6c0; text-transform:uppercase; margin:16px 0 8px; }
+  .phases{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .phase{ background:#eef0fa; border:1px solid #dcdff0; border-radius:8px; padding:10px 12px; position:relative; }
+  .phase.active{ background:#e8edfd; border-color:#c3d0f3; }
+  .phase .pt{ font-size:13px; font-weight:800; color:var(--navy); display:flex; justify-content:space-between; align-items:baseline; }
+  .phase .pt .st{ font-size:9px; font-weight:800; color:var(--red); letter-spacing:.5px; }
+  .phase .psub{ font-style:italic; font-size:10.5px; color:#6a74a0; margin-top:3px; line-height:1.25; }
+  .phase .dn{ font-size:10.3px; color:#4a5673; margin-top:7px; line-height:1.32; }
+  .phase .dn b{ color:var(--navy); }
+
+  .footer{ margin-top:auto; display:flex; justify-content:space-between; font-size:11px; color:#95a1bc; border-top:1px solid var(--line); padding:10px 0 12px; }
+</style>
+</head>
+<body>
+<section class="slide">
+  <aside class="side">
+    <div class="num">01</div>
+    <h1>Quest — AI&nbsp;Support Agent</h1>
+    <div class="subtitle">Support cases → grounded AI recommendations, written straight back into Dynamics 365 / ServiceNow</div>
+    <div class="sec">
+      <div class="lab">Business Value</div>
+      <div class="val">~30–60s case → recommendation, 24/7 hands-off</div>
+    </div>
+    <div class="sec">
+      <div class="lab">Industries</div>
+      <div class="val">Cloud Infra · ITSM · Enterprise Support</div>
+    </div>
+    <div class="sec">
+      <div class="lab">Build Status</div>
+      <div class="val">MVP deployed · 4-phase rollout</div>
+    </div>
+    <div class="sec">
+      <div class="lab">Principle</div>
+      <div class="val">AI proposes; it only acts behind confidence gates</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="row">
+      <div class="card prob">
+        <div class="h">Problem</div>
+        <p>Engineers triage every case by hand — routing, root-cause hunting and fix research are slow, inconsistent, and repeat work already solved in past tickets.</p>
+      </div>
+      <div class="card obj">
+        <div class="h">Objective</div>
+        <p>Route, diagnose and recommend a fix on every case in ~30–60s — grounded in real case history — so engineers act instead of investigate.</p>
+      </div>
+    </div>
+
+    <div class="card sol">
+      <div class="h">Solution</div>
+      <p>A stateless orchestrator runs a Routing → Diagnosis → Recommendation → Mitigation pipeline on each case, posts one grounded note back, and safely auto-remediates only low-risk, high-confidence issues — every decision audited.</p>
+    </div>
+
+    <div class="chips-lab">Systems Integrated</div>
+    <div class="chips">
+      <div class="chip">Dynamics 365</div>
+      <div class="chip">ServiceNow</div>
+      <div class="chip">Azure OpenAI</div>
+      <div class="chip">MCP Tools</div>
+      <div class="chip">Postgres + pgvector</div>
+    </div>
+
+    <div class="cols">
+      <div class="col">
+        <div class="bar">FEATURES</div>
+        <ul>
+          <li>Webhooks → dedupe → state machine</li>
+          <li>Skill- &amp; shift-aware routing</li>
+          <li>Similarity-grounded diagnosis (pgvector)</li>
+          <li>Hot Fix + Ultimate Fix, allowlisted links</li>
+          <li>Guarded auto-remediation + kill switch</li>
+        </ul>
+      </div>
+      <div class="col">
+        <div class="bar">USE CASES</div>
+        <ul>
+          <li>K8s / Karpenter incidents auto-triaged</li>
+          <li>Reopened cases → escalated recommendation</li>
+          <li>Manager SLA-risk dashboard</li>
+          <li>👍/👎 feedback regenerates the answer</li>
+          <li>MCP tools reused by Copilot Studio</li>
+        </ul>
+      </div>
+      <div class="col">
+        <div class="bar">BENEFITS</div>
+        <ul>
+          <li>~30–60s case → recommendation, 24/7</li>
+          <li>Grounded — no hallucinated fixes</li>
+          <li>Graceful degradation, no single point of failure</li>
+          <li>Safety-first: suggests, acts only behind gates</li>
+          <li>Full audit trail of every AI decision</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ph-lab">Delivery Roadmap — 4 Phases</div>
+    <div class="phases">
+      <div class="phase active">
+        <div class="pt"><span>Phase 1</span><span class="st">LIVE</span></div>
+        <div class="psub">Orchestration &amp; Grounded Recommendations</div>
+        <div class="dn"><b>Now:</b> Routing→Diagnosis→Recommendation, pgvector, D365 write-back, audit log</div>
+      </div>
+      <div class="phase">
+        <div class="pt"><span>Phase 2</span></div>
+        <div class="psub">MCP Engine &amp; Tooling</div>
+        <div class="dn"><b>Now:</b> reasoning/knowledge/dataverse servers, dual-engine flag → Copilot Studio</div>
+      </div>
+      <div class="phase">
+        <div class="pt"><span>Phase 3</span></div>
+        <div class="psub">Guarded Auto-Remediation</div>
+        <div class="dn"><b>Now:</b> safety gate + kill switch + verify-then-revert → real runbook execution</div>
+      </div>
+      <div class="phase">
+        <div class="pt"><span>Phase 4</span></div>
+        <div class="psub">Feedback Loop &amp; Manager Ops</div>
+        <div class="dn"><b>Now:</b> 👍/👎 regeneration, KB ranking, SLA dashboard → approve-and-execute flow</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Quest — AI Support Agent · PeopleTech Group</span>
+      <span>1 / 1</span>
+    </div>
+  </main>
+</section>
+</body>
+</html>
