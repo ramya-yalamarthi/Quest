@@ -229,13 +229,6 @@
             '&#128100; Assigned L2 Engineer: ' + escapeHtml(l2.l2_engineer_name || "—") +
             (l2.l2_engineer_email ? ' <span style="font-weight:400;color:#6b7280">(' + escapeHtml(l2.l2_engineer_email) + ')</span>' : '') +
           '</div>' +
-          '<button id="l2-context-btn" style="background:#7c3aed;color:#fff;border:none;border-radius:999px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Generate Handover &#8595;</button>' +
-          '<div id="l2-context-detail" style="display:none;margin-top:10px">' +
-            '<pre id="l2-context-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:11.5px;background:#fff;border:1px solid #e9d5ff;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0;color:#374151;max-height:320px;overflow-y:auto">' +
-              escapeHtml((l2.note_preview || "").replace(/<br>/g, "\n").replace(/<[^>]+>/g, "")) +
-            '</pre>' +
-            '<button id="l2-context-copy" style="margin-top:6px;background:none;border:1px solid #7c3aed;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#7c3aed">Copy to clipboard</button>' +
-          '</div>' +
           '</div>';
       }
 
@@ -660,26 +653,6 @@
           if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function() {});
           missingEmailCopy.textContent = "Copied!";
           setTimeout(function() { missingEmailCopy.textContent = "Copy to clipboard"; }, 1500);
-        });
-      }
-
-      var l2ContextBtn = el.querySelector("#l2-context-btn");
-      if (l2ContextBtn) {
-        l2ContextBtn.addEventListener("click", function() {
-          var detail = document.getElementById("l2-context-detail");
-          if (!detail) return;
-          var open = detail.style.display !== "none";
-          detail.style.display = open ? "none" : "block";
-          l2ContextBtn.textContent = open ? "Generate Handover ↓" : "Hide Handover ↑";
-        });
-      }
-      var l2ContextCopy = el.querySelector("#l2-context-copy");
-      if (l2ContextCopy) {
-        l2ContextCopy.addEventListener("click", function() {
-          var txt = document.getElementById("l2-context-text");
-          if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function() {});
-          l2ContextCopy.textContent = "Copied!";
-          setTimeout(function() { l2ContextCopy.textContent = "Copy to clipboard"; }, 1500);
         });
       }
 
