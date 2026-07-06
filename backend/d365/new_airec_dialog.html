@@ -277,7 +277,8 @@
         html += '<div style="background:' + eLvlBg + ';border-left:3px solid ' + eLvlBorder + ';border-radius:6px;padding:10px 12px;font-size:13px;color:' + eLvlColor + ';margin-top:8px">' +
           '<b>Escalation signals:</b> ' + escapeHtml((escalation.signals || []).join(" · ")) + '</div>';
       }
-      if (escalation && (escalation.level === "high" || escalation.level === "medium")) {
+      var showL1L2 = (escalation && (escalation.level === "high" || escalation.level === "medium")) || (sla && sla.resolution_breached);
+      if (showL1L2) {
         html += '<div style="margin-top:8px">' +
           '<button id="l1l2-btn" style="background:#7c3aed;color:#fff;border:none;border-radius:999px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Generate L1 → L2 Handover &#8595;</button>' +
           '</div>' +
