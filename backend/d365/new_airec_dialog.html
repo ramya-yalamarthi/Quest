@@ -232,8 +232,7 @@
           '</div>';
       }
 
-      var showL1L2 = (escalation && (escalation.level === "high" || escalation.level === "medium")) || (sla && sla.resolution_breached);
-      if (showL1L2 && !(data.l2_escalation && data.l2_escalation.escalated)) {
+      if (!(data.l2_escalation && data.l2_escalation.escalated)) {
         html += '<div style="background:#faf5ff;border:2px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
             '<span style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px">L1 → L2 ESCALATION</span>' +
