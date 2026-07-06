@@ -862,6 +862,76 @@ def get_manager_dashboard():
             "medium_risk": medium_risk, "tickets": result}
 
 
+@router.post("/escalate-to-l2")
+def escalate_to_l2_manual(case: str):
+    """Manual L1 → L2 escalation triggered by the L1 engineer from the popup.
+
+    Finds the best available L2/L3 engineer, posts the full context note to
+    Dataverse, and returns the assigned engineer details so the popup can confirm.
+    Idempotent: returns the existing escalation if one has already been posted."""
+    from app.orchestrator.dataverse import DataverseClient, available
+    if not available():
+        raise HTTPException(status_code=503, detail="Dataverse not configured")
+
+    client = DataverseClient()
+    case = case.replace("{", "").replace("}", "").strip()
+    target = client.get_case(case)
+    if not target:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    from app.orchestrator.l2_escalation import (
+        L2_NOTE_SUBJECT, detect_existing_escalation,
+        find_l2_engineer, build_escalation_note, parse_l1_engineer,
+    )
+    from app.orchestrator.d365_runner import NOTE_SUBJECT
+    from app.orchestrator.sla import sla_status
+    from datetime import datetime, timezone as _tz
+
+    notes = client.list_case_notes(target["id"], top=30)
+
+    # Idempotent — if already escalated return existing info
+    existing = detect_existing_escalation(notes)
+    if existing:
+        return {"already_escalated": True, **existing}
+
+    # Build SLA info for the note
+    created_raw = target.get("created_on") or target.get("createdon") or ""
+    try:
+        created_dt = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
+    except Exception:
+        created_dt = datetime.now(_tz.utc)
+    sla = sla_status(target.get("priority", 2), created_dt)
+
+    # Find L1 engineer from the AI note
+    ai_note_text = next(
+        (n["notetext"] for n in reversed(notes) if n.get("subject") == NOTE_SUBJECT), ""
+    )
+    l1_eng = parse_l1_engineer(ai_note_text)
+
+    team = target.get("specialty") or "Provisioning / scheduling"
+    l2_eng = find_l2_engineer(
+        team,
+        target.get("title", ""),
+        target.get("description", ""),
+        exclude_email=(l1_eng or {}).get("email", ""),
+    )
+    if not l2_eng:
+        raise HTTPException(status_code=422, detail="No L2 engineer available in the roster")
+
+    note_body = build_escalation_note(target, l1_eng, l2_eng, notes, ai_note_text, sla)
+    client.create_case_note(target["id"], L2_NOTE_SUBJECT, note_body)
+
+    return {
+        "escalated": True,
+        "l2_engineer_name": l2_eng["name"],
+        "l2_engineer_email": l2_eng["email"],
+        "l2_seniority": l2_eng["seniority"],
+        "l2_team": l2_eng["team"],
+        "escalated_at": datetime.now(_tz.utc).strftime("%Y-%m-%d %H:%M"),
+        "note_preview": note_body[:800],
+    }
+
+
 @router.post("/check-escalations")
 def check_escalations(x_webhook_secret: Optional[str] = Header(default=None)):
     """Run on a schedule (e.g. every 15 min via Power Automate Recurrence).

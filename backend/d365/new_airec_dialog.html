@@ -233,17 +233,14 @@
       }
 
       var showL1L2 = (escalation && (escalation.level === "high" || escalation.level === "medium")) || (sla && sla.resolution_breached);
-      if (showL1L2) {
+      if (showL1L2 && !(data.l2_escalation && data.l2_escalation.escalated)) {
         html += '<div style="background:#faf5ff;border:2px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
-            '<span style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px">L1 → L2 ESCALATION HANDOVER</span>' +
+            '<span style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px">L1 → L2 ESCALATION</span>' +
           '</div>' +
-          '<div style="font-size:13px;color:#1f2937;margin-bottom:10px">SLA breached or high escalation risk — generate the full L1 context to pass to L2.</div>' +
-          '<button id="l1l2-btn" style="background:#7c3aed;color:#fff;border:none;border-radius:999px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Generate L1 → L2 Handover &#8595;</button>' +
-          '<div id="l1l2-detail" style="display:none;margin-top:10px">' +
-            '<pre id="l1l2-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:11.5px;background:#fff;border:1px solid #e9d5ff;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0;color:#374151;max-height:320px;overflow-y:auto"></pre>' +
-            '<button id="l1l2-copy" style="margin-top:6px;background:none;border:1px solid #7c3aed;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#7c3aed">Copy to clipboard</button>' +
-          '</div>' +
+          '<div style="font-size:13px;color:#1f2937;margin-bottom:10px">SLA breached or high escalation risk — assign this ticket to an L2 engineer.</div>' +
+          '<button id="l1l2-btn" style="background:#7c3aed;color:#fff;border:none;border-radius:999px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Assign to L2 Engineer &#8594;</button>' +
+          '<div id="l1l2-result" style="display:none;margin-top:10px"></div>' +
           '</div>';
       }
 
@@ -597,25 +594,45 @@
       var l1l2Btn = el.querySelector("#l1l2-btn");
       if (l1l2Btn) {
         l1l2Btn.addEventListener("click", function() {
-          var detail = document.getElementById("l1l2-detail");
-          if (!detail) return;
-          if (detail.style.display !== "none") {
-            detail.style.display = "none";
-            l1l2Btn.textContent = "Generate L1 → L2 Handover ↓";
-            return;
-          }
-          document.getElementById("l1l2-text").textContent = buildEscalationHandover(data);
-          detail.style.display = "block";
-          l1l2Btn.textContent = "Hide Handover ↑";
-        });
-      }
-      var l1l2Copy = el.querySelector("#l1l2-copy");
-      if (l1l2Copy) {
-        l1l2Copy.addEventListener("click", function() {
-          var txt = document.getElementById("l1l2-text");
-          if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function() {});
-          l1l2Copy.textContent = "Copied!";
-          setTimeout(function() { l1l2Copy.textContent = "Copy to clipboard"; }, 1500);
+          var caseId = getCaseId();
+          var resultEl = document.getElementById("l1l2-result");
+          if (!resultEl) return;
+          l1l2Btn.disabled = true;
+          l1l2Btn.textContent = "Assigning…";
+          fetch(BASE + "/orchestrator/escalate-to-l2?case=" + encodeURIComponent(caseId), { method: "POST" })
+            .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+            .then(function(res) {
+              l1l2Btn.style.display = "none";
+              var preview = (res.note_preview || "").replace(/<br>/g, "\n").replace(/<[^>]+>/g, "");
+              resultEl.innerHTML =
+                '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 14px;margin-bottom:8px">' +
+                  '<div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:4px">&#10003; ' +
+                    (res.already_escalated ? 'Already escalated' : 'Assigned to L2 Engineer') +
+                  '</div>' +
+                  '<div style="font-size:13px;color:#1f2937">&#128100; <b>' + escapeHtml(res.l2_engineer_name || "—") + '</b>' +
+                    (res.l2_engineer_email ? ' <span style="color:#6b7280">(' + escapeHtml(res.l2_engineer_email) + ')</span>' : '') +
+                  '</div>' +
+                  '<div style="font-size:12px;color:#6b7280;margin-top:2px">' + escapeHtml((res.l2_seniority || "") + (res.l2_team ? " · " + res.l2_team : "")) + '</div>' +
+                '</div>' +
+                '<pre id="l1l2-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:11.5px;background:#fff;border:1px solid #e9d5ff;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0;color:#374151;max-height:260px;overflow-y:auto">' + escapeHtml(preview) + '</pre>' +
+                '<button id="l1l2-copy" style="margin-top:6px;background:none;border:1px solid #7c3aed;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#7c3aed">Copy to clipboard</button>';
+              resultEl.style.display = "block";
+              var copyBtn = document.getElementById("l1l2-copy");
+              if (copyBtn) {
+                copyBtn.addEventListener("click", function() {
+                  var txt = document.getElementById("l1l2-text");
+                  if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function() {});
+                  copyBtn.textContent = "Copied!";
+                  setTimeout(function() { copyBtn.textContent = "Copy to clipboard"; }, 1500);
+                });
+              }
+            })
+            .catch(function(err) {
+              l1l2Btn.disabled = false;
+              l1l2Btn.textContent = "Assign to L2 Engineer →";
+              resultEl.innerHTML = '<div style="color:#b91c1c;font-size:12.5px;margin-top:6px">&#9888; Could not assign: ' + escapeHtml(String(err)) + '</div>';
+              resultEl.style.display = "block";
+            });
         });
       }
 
