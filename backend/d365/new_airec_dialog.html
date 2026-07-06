@@ -239,6 +239,21 @@
           '</div>';
       }
 
+      var showL1L2 = (escalation && (escalation.level === "high" || escalation.level === "medium")) || (sla && sla.resolution_breached);
+      if (showL1L2) {
+        html += '<div style="background:#faf5ff;border:2px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+            '<span style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px">L1 → L2 ESCALATION HANDOVER</span>' +
+          '</div>' +
+          '<div style="font-size:13px;color:#1f2937;margin-bottom:10px">SLA breached or high escalation risk — generate the full L1 context to pass to L2.</div>' +
+          '<button id="l1l2-btn" style="background:#7c3aed;color:#fff;border:none;border-radius:999px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Generate L1 → L2 Handover &#8595;</button>' +
+          '<div id="l1l2-detail" style="display:none;margin-top:10px">' +
+            '<pre id="l1l2-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:11.5px;background:#fff;border:1px solid #e9d5ff;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0;color:#374151;max-height:320px;overflow-y:auto"></pre>' +
+            '<button id="l1l2-copy" style="margin-top:6px;background:none;border:1px solid #7c3aed;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#7c3aed">Copy to clipboard</button>' +
+          '</div>' +
+          '</div>';
+      }
+
       html += '<div class="section-label" style="margin-bottom:10px">INCIDENT TRENDS</div>';
       html += '<div class="trend-row">' +
         trendCard("This week", trends.week, "week") +
@@ -276,16 +291,6 @@
         var eLvlBorder = escalation.level === "high" ? "#fca5a5" : (escalation.level === "medium" ? "#fde68a" : "#e5e7eb");
         html += '<div style="background:' + eLvlBg + ';border-left:3px solid ' + eLvlBorder + ';border-radius:6px;padding:10px 12px;font-size:13px;color:' + eLvlColor + ';margin-top:8px">' +
           '<b>Escalation signals:</b> ' + escapeHtml((escalation.signals || []).join(" · ")) + '</div>';
-      }
-      var showL1L2 = (escalation && (escalation.level === "high" || escalation.level === "medium")) || (sla && sla.resolution_breached);
-      if (showL1L2) {
-        html += '<div style="margin-top:8px">' +
-          '<button id="l1l2-btn" style="background:#7c3aed;color:#fff;border:none;border-radius:999px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Generate L1 → L2 Handover &#8595;</button>' +
-          '</div>' +
-          '<div id="l1l2-detail" style="display:none;margin-top:8px">' +
-            '<pre id="l1l2-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:12px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0;color:#374151"></pre>' +
-            '<button id="l1l2-copy" style="margin-top:6px;background:none;border:1px solid #7c3aed;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#7c3aed">Copy to clipboard</button>' +
-          '</div>';
       }
       if (data.missing_info && (data.missing_info.missing_fields || []).length) {
         html += '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px 14px;margin-top:8px">' +
