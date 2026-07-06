@@ -662,6 +662,11 @@ def get_recommendation_data(case: str):
     comm_gap = _customer_comm_gap(client, target)
     line1_ctx = _line1_context(client, target)
 
+    # Detect if auto L2 escalation has already been posted for this ticket
+    from app.orchestrator.l2_escalation import detect_existing_escalation
+    all_notes_for_l2 = client.list_case_notes(target["id"], top=30)
+    l2_escalation_status = detect_existing_escalation(all_notes_for_l2)
+
     # Auto-resolve: top similar case with >= 90% display score is near-identical
     # -- surface it so the engineer can apply the same resolution in one step.
     similar_incidents = d.get("similar_incidents") or []
@@ -716,6 +721,7 @@ def get_recommendation_data(case: str):
         "missing_info": missing_info,
         "customer_comm_gap": comm_gap,
         "line1_context": line1_ctx,
+        "l2_escalation": l2_escalation_status,
         "suggested_workflow": advisory.get("suggested_workflow"),
         "feedback": {
             "like_url": advisory.get("feedback_like_url"),
@@ -854,3 +860,86 @@ def get_manager_dashboard():
     medium_risk = sum(1 for r in result if r["risk"]["level"] == "medium")
     return {"total_open": len(result), "high_risk": high_risk,
             "medium_risk": medium_risk, "tickets": result}
+
+
+@router.post("/check-escalations")
+def check_escalations(x_webhook_secret: Optional[str] = Header(default=None)):
+    """Run on a schedule (e.g. every 15 min via Power Automate Recurrence).
+
+    For every open ticket whose SLA is breached or critically at risk:
+    - Find an available L2/L3 engineer from the roster
+    - Post a comprehensive escalation note to Dataverse carrying all L1 context
+      (what L1 understood, what was tried, full customer communications)
+    - Skip tickets that already have an L2 escalation note
+
+    Auth: same WEBHOOK_SECRET as /d365-webhook, if set."""
+    secret = os.getenv("WEBHOOK_SECRET")
+    if secret and x_webhook_secret != secret:
+        raise HTTPException(status_code=401, detail="invalid webhook secret")
+
+    from app.orchestrator.dataverse import DataverseClient, available
+    if not available():
+        raise HTTPException(status_code=503, detail="Dataverse not configured")
+
+    from app.orchestrator.d365_runner import NOTE_SUBJECT
+    from app.orchestrator.l2_escalation import (
+        L2_NOTE_SUBJECT, should_escalate, find_l2_engineer,
+        build_escalation_note, parse_l1_engineer,
+    )
+
+    client = DataverseClient()
+    open_cases = [c for c in client.list_cases(top=200) if c.get("state") == 0]
+
+    escalated, skipped, errors = [], [], []
+
+    for case in open_cases:
+        try:
+            notes = client.list_case_notes(case["id"], top=30)
+
+            # Build a minimal SLA dict from ticket age so we can check breach
+            from app.orchestrator.sla import sla_status
+            from datetime import datetime, timezone as _tz
+            created_raw = case.get("created_on") or case.get("createdon") or ""
+            try:
+                created_dt = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
+            except Exception:
+                created_dt = datetime.now(_tz.utc)
+            sla = sla_status(case.get("priority", 2), created_dt)
+
+            if not should_escalate(sla, notes):
+                skipped.append(case.get("ticket_number"))
+                continue
+
+            # Find the L1 engineer name from the latest AI note
+            ai_note_text = next(
+                (n["notetext"] for n in reversed(notes) if n.get("subject") == NOTE_SUBJECT), ""
+            )
+            l1_eng = parse_l1_engineer(ai_note_text)
+
+            team = case.get("specialty") or "Provisioning / scheduling"
+            l2_eng = find_l2_engineer(
+                team,
+                case.get("title", ""),
+                case.get("description", ""),
+                exclude_email=(l1_eng or {}).get("email", ""),
+            )
+            if not l2_eng:
+                errors.append({"ticket": case.get("ticket_number"), "error": "No L2 engineer available"})
+                continue
+
+            note_body = build_escalation_note(case, l1_eng, l2_eng, notes, ai_note_text, sla)
+            client.create_case_note(case["id"], L2_NOTE_SUBJECT, note_body)
+            escalated.append({
+                "ticket": case.get("ticket_number"),
+                "l2_engineer": l2_eng["name"],
+                "l2_email": l2_eng["email"],
+            })
+
+        except Exception as exc:
+            errors.append({"ticket": case.get("ticket_number"), "error": str(exc)})
+
+    return {
+        "escalated": escalated,
+        "skipped_count": len(skipped),
+        "errors": errors,
+    }
