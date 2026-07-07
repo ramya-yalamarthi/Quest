@@ -124,11 +124,15 @@ def build_escalation_note(case: dict, l1: Optional[dict], l2: dict,
             "",
         ]
 
-    # What L1 understood — pull from AI note
+    # What L1 understood — pull from AI note (strip HTML so we don't double-encode)
     parts.append("── WHAT L1 UNDERSTOOD ──")
     if ai_note:
-        snippet = ai_note.strip()[:600]
-        parts.append(esc(snippet) + ("…" if len(ai_note.strip()) > 600 else ""))
+        import re as _re
+        plain = _re.sub(r"<[^>]+>", " ", ai_note)
+        plain = plain.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ")
+        plain = _re.sub(r" {2,}", " ", plain).strip()
+        snippet = plain[:600]
+        parts.append(esc(snippet) + ("…" if len(plain) > 600 else ""))
     else:
         parts.append("(AI analysis note not found)")
     parts.append("")
