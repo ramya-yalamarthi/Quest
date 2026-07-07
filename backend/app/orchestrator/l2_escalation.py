@@ -30,11 +30,21 @@ def parse_l1_engineer(note_text: str) -> Optional[dict]:
 
 def find_l2_engineer(team: str, title: str, description: str,
                      exclude_email: str = "") -> Optional[dict]:
-    """Pick the best available L2 or L3 engineer for escalation."""
+    """Pick the best available L2 engineer for escalation.
+
+    Strictly follows L1 → L2 → L3 hierarchy: only promotes to L3 when
+    no L2 engineer is available at all, so the caller (popup button) always
+    escalates to the next level, never skipping one.
+    """
     roster = load_roster()
-    l2_pool = [e for e in roster
-               if e.get("seniority", "").upper() in ("L2", "L3")
-               and e.get("email", "") != exclude_email]
+
+    def _pool(seniorities: list[str]) -> list[dict]:
+        return [e for e in roster
+                if e.get("seniority", "").upper() in seniorities
+                and e.get("email", "") != exclude_email]
+
+    # Strict ordering: L2 first, then L3, then anyone who isn't L1
+    l2_pool = _pool(["L2"]) or _pool(["L3"]) or _pool(["L2", "L3"])
     if not l2_pool:
         l2_pool = [e for e in roster
                    if e.get("seniority", "").upper() != "L1"
@@ -60,7 +70,7 @@ def find_l2_engineer(team: str, title: str, description: str,
     spare = chosen["capacity"] - chosen["load"]
 
     avail = "on shift" if is_on_shift(chosen) else ("on-call" if chosen.get("on_call") else "off shift")
-    reason = (f"L2/L3 specialist for '{chosen['specialty']}'; {avail}; "
+    reason = (f"{chosen['seniority']} specialist for '{chosen['specialty']}'; {avail}; "
               f"spare capacity {spare} ({chosen['load']}/{chosen['capacity']})")
     if rem is not None:
         reason += f"; {rem // 60}h {rem % 60}m left in shift"
