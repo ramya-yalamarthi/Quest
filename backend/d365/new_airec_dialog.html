@@ -287,9 +287,6 @@
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px"><div class="bullet-lbl">Probable cause</div>' + confidencePill(es.confidence) + '</div>' +
           '<div class="bullet-text">' + escapeHtml(es.probable_cause) + '</div></div></div>';
       }
-      if (es.pattern_detected) {
-        html += '<div class="pattern-box"><b>Pattern detected:</b> ' + escapeHtml(es.pattern_detected) + '</div>';
-      }
       if (escalation && (escalation.signals || []).length) {
         var eLvlColor = escalation.level === "high" ? "#b91c1c" : (escalation.level === "medium" ? "#92400e" : "#475569");
         var eLvlBg = escalation.level === "high" ? "#fff1f2" : (escalation.level === "medium" ? "#fffbeb" : "#f8fafc");
@@ -314,24 +311,6 @@
       }
       html += '<div class="divider"></div>';
 
-      var cluster = data.cluster;
-      if (cluster && cluster.count) {
-        var clusterTicketsHtml = (cluster.tickets || []).map(function(t) {
-          var matchPct = Math.round((t.match_score || 0) * 100);
-          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #e9d5ff;font-size:12.5px">' +
-            '<a href="' + escapeHtml(t.url || "#") + '" data-extlink="1" style="color:#7c3aed;font-weight:500">' + escapeHtml(t.ticket_number || "") + ' — ' + escapeHtml(t.title || "") + '</a>' +
-            '<span style="color:#6b21a8;font-size:11px;white-space:nowrap;margin-left:8px">' + matchPct + '% match</span>' +
-            '</div>';
-        }).join("");
-        html += '<div class="section-label" style="margin-bottom:8px">RELATED OPEN TICKETS <span style="font-weight:400;text-transform:none;font-size:11px;color:#374151">— may share the same root cause</span></div>';
-        html += '<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px 14px;margin-bottom:4px">';
-        html += '<button id="cluster-toggle" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;font-size:12.5px;color:#6b21a8;font-weight:600;padding:0;display:flex;align-items:center;gap:6px">' +
-          '<span id="cluster-arrow" style="font-size:10px">&#9654;</span>' +
-          '<span>' + cluster.count + ' other open ticket' + (cluster.count > 1 ? 's' : '') + ' appear to share this root cause — click to view</span>' +
-          '</button>';
-        html += '<div id="cluster-tickets" style="display:none;margin-top:8px">' + clusterTicketsHtml + '</div>';
-        html += '</div><div class="divider"></div>';
-      }
 
       var kbDocs = data.kb_recommendations || [];
       if (kbDocs.length) {
@@ -681,18 +660,6 @@
               resultEl.innerHTML = '<div style="color:#b91c1c;font-size:12.5px;margin-top:6px">&#9888; Could not assign: ' + escapeHtml(String(err)) + '</div>';
               resultEl.style.display = "block";
             });
-        });
-      }
-
-      var clusterToggle = el.querySelector("#cluster-toggle");
-      if (clusterToggle) {
-        clusterToggle.addEventListener("click", function() {
-          var tickets = document.getElementById("cluster-tickets");
-          var arrow = document.getElementById("cluster-arrow");
-          if (!tickets) return;
-          var open = tickets.style.display !== "none";
-          tickets.style.display = open ? "none" : "block";
-          if (arrow) arrow.innerHTML = open ? "&#9654;" : "&#9660;";
         });
       }
 
