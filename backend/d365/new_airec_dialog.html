@@ -214,25 +214,41 @@
 
       var html = "";
 
-      // L2 auto-escalation banner — shown when system has already escalated to L2
-      if (data.l2_escalation && data.l2_escalation.escalated) {
+      // Escalation state: none → L1→L2 button | L2 assigned → L2 banner + L2→L3 button | L3 assigned → L3 banner (final)
+      var isL2 = data.l2_escalation && data.l2_escalation.escalated;
+      var isL3 = data.l3_escalation && data.l3_escalation.escalated;
+
+      if (isL3) {
+        // Final state — escalated to L3, no more buttons
+        var l3 = data.l3_escalation;
+        html += '<div style="background:#fff5f5;border:2px solid #ef4444;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+            '<span style="background:#ef4444;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px">ESCALATED TO L3</span>' +
+            '<span style="font-size:11.5px;color:#991b1b">' + escapeHtml(l3.escalated_at || "") + ' UTC</span>' +
+          '</div>' +
+          '<div style="font-size:13px;font-weight:600;color:#991b1b">' +
+            '&#128100; Assigned L3 Engineer: ' + escapeHtml(l3.l3_engineer_name || "—") +
+            (l3.l3_engineer_email ? ' <span style="font-weight:400;color:#6b7280">(' + escapeHtml(l3.l3_engineer_email) + ')</span>' : '') +
+          '</div>' +
+          '</div>';
+      } else if (isL2) {
+        // L2 assigned — L2 engineer sees this with the option to escalate to L3
         var l2 = data.l2_escalation;
         html += '<div style="background:#faf5ff;border:2px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
-            '<span style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px">AUTO-ESCALATED TO L2</span>' +
+            '<span style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px">ESCALATED TO L2</span>' +
             '<span style="font-size:11.5px;color:#6b21a8">' + escapeHtml(l2.escalated_at || "") + ' UTC</span>' +
-          '</div>' +
-          '<div style="font-size:13px;color:#1f2937;margin-bottom:6px">' +
-            'This ticket was automatically escalated because the SLA was breached and could not be resolved at L1.' +
           '</div>' +
           '<div style="font-size:13px;font-weight:600;color:#5b21b6;margin-bottom:10px">' +
             '&#128100; Assigned L2 Engineer: ' + escapeHtml(l2.l2_engineer_name || "—") +
             (l2.l2_engineer_email ? ' <span style="font-weight:400;color:#6b7280">(' + escapeHtml(l2.l2_engineer_email) + ')</span>' : '') +
           '</div>' +
+          '<div style="font-size:12.5px;color:#6b7280;margin-bottom:10px">If this issue cannot be resolved at L2, escalate to an L3 engineer.</div>' +
+          '<button id="l2l3-btn" style="background:#ef4444;color:#fff;border:none;border-radius:999px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Assign to L3 Engineer &#8594;</button>' +
+          '<div id="l2l3-result" style="display:none;margin-top:10px"></div>' +
           '</div>';
-      }
-
-      if (!(data.l2_escalation && data.l2_escalation.escalated)) {
+      } else {
+        // No escalation yet — L1 engineer sees the assign to L2 button
         html += '<div style="background:#faf5ff;border:2px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
             '<span style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px">L1 → L2 ESCALATION</span>' +
@@ -629,6 +645,39 @@
             .catch(function(err) {
               l1l2Btn.disabled = false;
               l1l2Btn.textContent = "Assign to L2 Engineer →";
+              resultEl.innerHTML = '<div style="color:#b91c1c;font-size:12.5px;margin-top:6px">&#9888; Could not assign: ' + escapeHtml(String(err)) + '</div>';
+              resultEl.style.display = "block";
+            });
+        });
+      }
+
+      var l2l3Btn = el.querySelector("#l2l3-btn");
+      if (l2l3Btn) {
+        l2l3Btn.addEventListener("click", function() {
+          var caseId = getCaseId();
+          var resultEl = document.getElementById("l2l3-result");
+          if (!resultEl) return;
+          l2l3Btn.disabled = true;
+          l2l3Btn.textContent = "Assigning…";
+          fetch(BASE + "/orchestrator/escalate-to-l3?case=" + encodeURIComponent(caseId), { method: "POST" })
+            .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+            .then(function(res) {
+              l2l3Btn.style.display = "none";
+              resultEl.innerHTML =
+                '<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:12px 14px">' +
+                  '<div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:4px">&#10003; ' +
+                    (res.already_escalated ? 'Already escalated to L3' : 'Assigned to L3 Engineer') +
+                  '</div>' +
+                  '<div style="font-size:13px;color:#1f2937">&#128100; <b>' + escapeHtml(res.l3_engineer_name || "—") + '</b>' +
+                    (res.l3_engineer_email ? ' <span style="color:#6b7280">(' + escapeHtml(res.l3_engineer_email) + ')</span>' : '') +
+                  '</div>' +
+                  '<div style="font-size:12px;color:#6b7280;margin-top:2px">' + escapeHtml((res.l3_seniority || "") + (res.l3_team ? " · " + res.l3_team : "")) + '</div>' +
+                '</div>';
+              resultEl.style.display = "block";
+            })
+            .catch(function(err) {
+              l2l3Btn.disabled = false;
+              l2l3Btn.textContent = "Assign to L3 Engineer →";
               resultEl.innerHTML = '<div style="color:#b91c1c;font-size:12.5px;margin-top:6px">&#9888; Could not assign: ' + escapeHtml(String(err)) + '</div>';
               resultEl.style.display = "block";
             });

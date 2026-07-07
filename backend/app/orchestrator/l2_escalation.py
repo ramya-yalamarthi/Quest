@@ -17,6 +17,7 @@ from app.orchestrator.roster import (
 )
 
 L2_NOTE_SUBJECT = "AI L2 Escalation"
+L3_NOTE_SUBJECT = "AI L3 Escalation"
 
 _ASSIGNED_RE = re.compile(r"Assigned engineer:\s*([^\n(<]+?)(?:\s*\(([^)]+)\))?[\n<]")
 
@@ -184,6 +185,125 @@ def build_escalation_note(case: dict, l1: Optional[dict], l2: dict,
     ]
 
     return "<br>".join(parts)
+
+
+def find_l3_engineer(team: str, title: str, description: str,
+                     exclude_email: str = "") -> Optional[dict]:
+    """Pick the best available L3 engineer for L2 → L3 escalation."""
+    roster = load_roster()
+    l3_pool = [e for e in roster
+               if e.get("seniority", "").upper() == "L3"
+               and e.get("email", "") != exclude_email]
+    if not l3_pool:
+        return None
+
+    on_shift = [e for e in l3_pool if is_on_shift(e)]
+    on_call  = [e for e in l3_pool if e.get("on_call")]
+    pool = on_shift or on_call or l3_pool
+
+    candidates, _, _ = _best_match(pool, team, f"{title} {description}")
+    if not candidates:
+        candidates = pool
+
+    candidates.sort(key=lambda e: (
+        -(e["capacity"] - e["load"]),
+        not is_on_shift(e),
+        not e.get("on_call"),
+    ))
+    chosen = candidates[0]
+    rem = remaining_shift_minutes(chosen)
+    spare = chosen["capacity"] - chosen["load"]
+
+    avail = "on shift" if is_on_shift(chosen) else ("on-call" if chosen.get("on_call") else "off shift")
+    reason = (f"L3 specialist for '{chosen['specialty']}'; {avail}; "
+              f"spare capacity {spare} ({chosen['load']}/{chosen['capacity']})")
+    if rem is not None:
+        reason += f"; {rem // 60}h {rem % 60}m left in shift"
+
+    return {
+        "name": chosen["name"], "email": chosen["email"],
+        "team": chosen["specialty"], "seniority": chosen["seniority"],
+        "on_shift": is_on_shift(chosen), "on_call": chosen.get("on_call", False),
+        "capacity": chosen["capacity"], "load": chosen["load"],
+        "skills": chosen.get("skills", []),
+        "remaining_shift_minutes": rem,
+        "reason": reason,
+    }
+
+
+def build_l3_escalation_note(case: dict, l2: Optional[dict], l3: dict,
+                              notes: list[dict], sla: Optional[dict]) -> str:
+    """Build the L2 → L3 escalation note posted to Dataverse."""
+    ticket_num = case.get("ticket_number", "")
+    title = case.get("title", "")
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    sep = "=" * 52
+
+    def esc(s: str) -> str:
+        return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    parts: list[str] = [
+        f"<b>L2 → L3 ESCALATION — {esc(ticket_num)}</b>",
+        sep,
+        f"<b>Ticket:</b> {esc(title)}",
+        f"<b>Escalated at:</b> {now_str}",
+        f"<b>L2 Engineer:</b> {esc(l2['name']) if l2 else 'Unknown'}"
+        + (f" ({esc(l2['email'])})" if l2 and l2.get('email') else ""),
+        f"<b>Assigned L3 Engineer:</b> {esc(l3['name'])} ({esc(l3['email'])})"
+        + f" — {esc(l3['seniority'])} · {esc(l3['team'])}",
+        "",
+    ]
+
+    if sla:
+        mins = sla.get("minutes_to_resolution_deadline", 0)
+        clock = (f"OVERDUE by {-mins} min" if mins < 0 else f"{mins} min remaining")
+        parts += [
+            "── SLA STATUS ──",
+            f"{esc(sla.get('tier', ''))} · Resolution {clock}"
+            + (" · <b>SLA BREACHED</b>" if sla.get("resolution_breached") else ""),
+            "",
+        ]
+
+    human_notes = [n for n in notes
+                   if not (n.get("subject") or "").startswith("AI ")
+                   and (n.get("notetext") or "").strip()]
+    parts.append("── L2 INVESTIGATION NOTES ──")
+    if human_notes:
+        for n in human_notes[:6]:
+            when = (n.get("createdon") or "")[:16]
+            text = (n.get("notetext") or "").strip()[:350]
+            parts.append(f"[{esc(when)}] {esc(text)}")
+    else:
+        parts.append("No L2 engineer notes recorded.")
+    parts.append("")
+
+    parts += [
+        "── WHY L3 ESCALATION WAS TRIGGERED ──",
+        "• Issue unresolved at L2 level",
+        "• L2 engineer manually escalated to L3",
+        "",
+        f"<i>This note was generated automatically by the AI Insights system.</i>",
+    ]
+
+    return "<br>".join(parts)
+
+
+def detect_existing_l3_escalation(notes: list[dict]) -> Optional[dict]:
+    """If an L3 escalation note exists, return its key fields for the popup."""
+    for n in reversed(notes):
+        if (n.get("subject") or "").startswith("AI L3 Escalation"):
+            text = n.get("notetext") or ""
+            m = re.search(r"Assigned L3 Engineer:</b>\s*([^\(]+)\(([^)]+)\)", text)
+            name = m.group(1).strip() if m else ""
+            email = m.group(2).strip() if m else ""
+            when = (n.get("createdon") or "")[:16]
+            return {
+                "escalated": True,
+                "l3_engineer_name": name,
+                "l3_engineer_email": email,
+                "escalated_at": when,
+            }
+    return None
 
 
 def detect_existing_escalation(notes: list[dict]) -> Optional[dict]:

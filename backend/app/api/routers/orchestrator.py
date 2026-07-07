@@ -662,10 +662,11 @@ def get_recommendation_data(case: str):
     comm_gap = _customer_comm_gap(client, target)
     line1_ctx = _line1_context(client, target)
 
-    # Detect if auto L2 escalation has already been posted for this ticket
-    from app.orchestrator.l2_escalation import detect_existing_escalation
+    # Detect L2 and L3 escalation status
+    from app.orchestrator.l2_escalation import detect_existing_escalation, detect_existing_l3_escalation
     all_notes_for_l2 = client.list_case_notes(target["id"], top=30)
     l2_escalation_status = detect_existing_escalation(all_notes_for_l2)
+    l3_escalation_status = detect_existing_l3_escalation(all_notes_for_l2)
 
     # Auto-resolve: top similar case with >= 90% display score is near-identical
     # -- surface it so the engineer can apply the same resolution in one step.
@@ -722,6 +723,7 @@ def get_recommendation_data(case: str):
         "customer_comm_gap": comm_gap,
         "line1_context": line1_ctx,
         "l2_escalation": l2_escalation_status,
+        "l3_escalation": l3_escalation_status,
         "suggested_workflow": advisory.get("suggested_workflow"),
         "feedback": {
             "like_url": advisory.get("feedback_like_url"),
@@ -929,6 +931,71 @@ def escalate_to_l2_manual(case: str):
         "l2_team": l2_eng["team"],
         "escalated_at": datetime.now(_tz.utc).strftime("%Y-%m-%d %H:%M"),
         "note_preview": note_body[:800],
+    }
+
+
+@router.post("/escalate-to-l3")
+def escalate_to_l3_manual(case: str):
+    """Manual L2 → L3 escalation triggered by the L2 engineer from the popup.
+
+    Only callable after a ticket has been escalated to L2. Finds the best L3
+    engineer, posts a context note to Dataverse, and returns assignment details.
+    Idempotent: returns the existing escalation if one has already been posted."""
+    from app.orchestrator.dataverse import DataverseClient, available
+    if not available():
+        raise HTTPException(status_code=503, detail="Dataverse not configured")
+
+    client = DataverseClient()
+    case = case.replace("{", "").replace("}", "").strip()
+    target = client.get_case(case)
+    if not target:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    from app.orchestrator.l2_escalation import (
+        L3_NOTE_SUBJECT, detect_existing_l3_escalation, detect_existing_escalation,
+        find_l3_engineer, build_l3_escalation_note,
+    )
+    from app.orchestrator.sla import sla_status
+    from datetime import datetime, timezone as _tz
+
+    notes = client.list_case_notes(target["id"], top=30)
+
+    existing = detect_existing_l3_escalation(notes)
+    if existing:
+        return {"already_escalated": True, **existing}
+
+    l2_info = detect_existing_escalation(notes)
+    l2_eng = None
+    if l2_info:
+        l2_eng = {"name": l2_info.get("l2_engineer_name", ""), "email": l2_info.get("l2_engineer_email", "")}
+
+    created_raw = target.get("created_on") or target.get("createdon") or ""
+    try:
+        created_dt = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
+    except Exception:
+        created_dt = datetime.now(_tz.utc)
+    sla = sla_status(target.get("priority", 2), created_dt)
+
+    team = target.get("specialty") or "Provisioning / scheduling"
+    l3_eng = find_l3_engineer(
+        team,
+        target.get("title", ""),
+        target.get("description", ""),
+        exclude_email=(l2_eng or {}).get("email", ""),
+    )
+    if not l3_eng:
+        raise HTTPException(status_code=422, detail="No L3 engineer available in the roster")
+
+    note_body = build_l3_escalation_note(target, l2_eng, l3_eng, notes, sla)
+    client.create_case_note(target["id"], L3_NOTE_SUBJECT, note_body)
+
+    return {
+        "escalated": True,
+        "l3_engineer_name": l3_eng["name"],
+        "l3_engineer_email": l3_eng["email"],
+        "l3_seniority": l3_eng["seniority"],
+        "l3_team": l3_eng["team"],
+        "escalated_at": datetime.now(_tz.utc).strftime("%Y-%m-%d %H:%M"),
     }
 
 
