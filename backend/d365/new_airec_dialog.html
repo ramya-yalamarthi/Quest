@@ -277,15 +277,22 @@
         escalationBadge = '<span class="pill ' + eCls + '" title="' + escapeHtml((escalation.signals || []).join(" · ")) + '">' +
           eIcon + "ESCALATION RISK: " + eLvl.toUpperCase() + '</span>';
       }
-      html += '<div class="row-between"><span class="section-label">EXECUTIVE SUMMARY</span><div style="display:flex;gap:6px;align-items:center">' + escalationBadge + '</div></div>';
+      html += '<div class="row-between"><span class="section-label">CASE ANALYSIS</span><div style="display:flex;gap:6px;align-items:center">' + escalationBadge + '</div></div>';
+      html += '<div style="display:flex;gap:8px;margin-bottom:8px">';
       if (es.current_issue) {
-        html += '<div class="bullet-row"><div class="bullet-dot blue"></div><div>' +
-          '<div class="bullet-lbl">Current issue</div><div class="bullet-text">' + escapeHtml(es.current_issue) + '</div></div></div>';
+        html += '<button id="ci-btn" style="flex:1;text-align:left;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:600;color:#1d4ed8;cursor:pointer;font-family:inherit">&#128196; Current Issue &#8595;</button>';
       }
       if (es.probable_cause) {
-        html += '<div class="bullet-row"><div class="bullet-dot orange"></div><div>' +
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px"><div class="bullet-lbl">Probable cause</div>' + confidencePill(es.confidence) + '</div>' +
-          '<div class="bullet-text">' + escapeHtml(es.probable_cause) + '</div></div></div>';
+        html += '<button id="pc-btn" style="flex:1;text-align:left;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:600;color:#92400e;cursor:pointer;font-family:inherit">&#128270; Probable Cause &#8595;</button>';
+      }
+      html += '</div>';
+      if (es.current_issue) {
+        html += '<div id="ci-detail" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;font-size:13px;color:#1e3a8a;margin-bottom:8px">' + escapeHtml(es.current_issue) + '</div>';
+      }
+      if (es.probable_cause) {
+        html += '<div id="pc-detail" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:13px;color:#78350f;margin-bottom:8px">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' + confidencePill(es.confidence) + '</div>' +
+          escapeHtml(es.probable_cause) + '</div>';
       }
       if (escalation && (escalation.signals || []).length) {
         var eLvlColor = escalation.level === "high" ? "#b91c1c" : (escalation.level === "medium" ? "#92400e" : "#475569");
@@ -660,6 +667,28 @@
               resultEl.innerHTML = '<div style="color:#b91c1c;font-size:12.5px;margin-top:6px">&#9888; Could not assign: ' + escapeHtml(String(err)) + '</div>';
               resultEl.style.display = "block";
             });
+        });
+      }
+
+      var ciBtn = el.querySelector("#ci-btn");
+      if (ciBtn) {
+        ciBtn.addEventListener("click", function() {
+          var detail = document.getElementById("ci-detail");
+          if (!detail) return;
+          var open = detail.style.display !== "none";
+          detail.style.display = open ? "none" : "block";
+          ciBtn.innerHTML = (open ? "&#128196; Current Issue &#8595;" : "&#128196; Current Issue &#8593;");
+        });
+      }
+
+      var pcBtn = el.querySelector("#pc-btn");
+      if (pcBtn) {
+        pcBtn.addEventListener("click", function() {
+          var detail = document.getElementById("pc-detail");
+          if (!detail) return;
+          var open = detail.style.display !== "none";
+          detail.style.display = open ? "none" : "block";
+          pcBtn.innerHTML = (open ? "&#128270; Probable Cause &#8595;" : "&#128270; Probable Cause &#8593;");
         });
       }
 
