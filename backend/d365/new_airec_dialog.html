@@ -359,45 +359,10 @@
         html += assignCardHtml(eng);
       }
 
-      if (sla) {
-        var mins = sla.minutes_to_resolution_deadline;
-        var clock = mins >= 0 ? (mins + " min left") : ("OVERDUE by " + (-mins) + " min");
-        var riskHtml = "";
-        if (sla.breach_risk === "critical") {
-          riskHtml = ' &middot; <span class="pill pill-red" style="font-size:11px">&#9888; SLA BREACH LIKELY</span>';
-        } else if (sla.breach_risk === "at_risk") {
-          riskHtml = ' &middot; <span class="pill pill-amber" style="font-size:11px">&#9888; At risk of breach</span>';
-        }
-        html += '<div class="sla-line">SLA: <b>' + escapeHtml(sla.tier) + '</b> &middot; Resolution ' + clock +
-                (sla.resolution_breached ? ' &middot; <span style="color:#b91c1c">&#9888; SLA BREACHED</span>' : '') +
-                riskHtml + '</div>';
-      }
-      if (data.customer_comm_gap) {
-        var gap = data.customer_comm_gap;
-        html += '<div style="background:#fff1f2;border-left:3px solid #ef4444;border-radius:6px;padding:8px 12px;font-size:12.5px;color:#b91c1c;margin-top:8px">' +
-          '&#9888; <b>Customer not updated in ' + gap.hours_since_update + 'h</b>' +
-          (gap.no_notes ? ' — no updates have been sent since ticket creation.' : ' — send a status update now.') +
-          '</div>';
-      }
-      if (data.resolution_prediction) {
-        var rp = data.resolution_prediction;
-        var rpRange = "~" + rp.range_low + "–" + rp.range_high + " " + rp.unit +
-                      " (" + (rp.workflow_guided ? "workflow-guided" : "manual") + ")";
-        var rpCls = rp.confidence === "high" ? "color:#15803d" : (rp.confidence === "medium" ? "color:#92400e" : "color:#475569");
-        html += '<div style="font-size:12px;color:#6b7280;margin-top:5px">Estimated resolution: ' +
-          '<b style="' + rpCls + '">' + escapeHtml(rpRange) + '</b>' +
-          ' &middot; <span style="font-style:italic">' + escapeHtml(rp.note) + '</span></div>';
-      }
-      html += '<div style="margin-top:10px">' +
-        '<button id="handoff-btn" style="background:none;border:1px solid #c8c6c4;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:#374151">Generate Handoff Note &#8595;</button>' +
-        '</div>' +
-        '<div id="handoff-detail" style="display:none;margin-top:8px">' +
-          '<pre id="handoff-text" style="font-family:\'Segoe UI\',Arial,sans-serif;font-size:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;margin:0"></pre>' +
-          '<button id="handoff-copy" style="margin-top:6px;background:none;border:1px solid #0078d4;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:#0078d4">Copy to clipboard</button>' +
-        '</div>';
       if (workflow) {
-        var steps = (workflow.steps || []).map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join("");
-        html += '<div class="workflow-box"><b>Suggested workflow:</b> ' + escapeHtml(workflow.title) + '<ol>' + steps + '</ol></div>';
+        var wfSteps = (workflow.steps || []).map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join("");
+        html += '<button id="workflow-btn" style="width:100%;text-align:left;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:600;color:#374151;cursor:pointer;font-family:inherit;margin-top:10px">&#9654; Suggested Workflow &#8595;</button>';
+        html += '<div id="workflow-detail" style="display:none;margin-top:6px"><div class="workflow-box"><b>' + escapeHtml(workflow.title) + '</b><ol>' + wfSteps + '</ol></div></div>';
       }
 
       html += '<div class="divider"></div><div id="feedback-anchor"></div>';
@@ -727,28 +692,16 @@
         });
       }
 
-      var handoffBtn = el.querySelector("#handoff-btn");
-      if (handoffBtn) {
-        handoffBtn.addEventListener("click", function () {
-          var detail = document.getElementById("handoff-detail");
+      var workflowBtn = el.querySelector("#workflow-btn");
+      if (workflowBtn) {
+        workflowBtn.addEventListener("click", function () {
+          var detail = document.getElementById("workflow-detail");
           if (!detail) return;
-          if (detail.style.display !== "none") {
-            detail.style.display = "none";
-            handoffBtn.textContent = "Generate Handoff Note ↓";
-            return;
-          }
-          document.getElementById("handoff-text").textContent = buildHandoffNote(data);
-          detail.style.display = "block";
-          handoffBtn.textContent = "Hide Handoff Note ↑";
-        });
-      }
-      var handoffCopy = el.querySelector("#handoff-copy");
-      if (handoffCopy) {
-        handoffCopy.addEventListener("click", function () {
-          var txt = document.getElementById("handoff-text");
-          if (txt && navigator.clipboard) navigator.clipboard.writeText(txt.textContent).catch(function () {});
-          handoffCopy.textContent = "Copied!";
-          setTimeout(function () { handoffCopy.textContent = "Copy to clipboard"; }, 1500);
+          var open = detail.style.display !== "none";
+          detail.style.display = open ? "none" : "block";
+          workflowBtn.innerHTML = open
+            ? "&#9654; Suggested Workflow &#8595;"
+            : "&#9660; Suggested Workflow &#8593;";
         });
       }
 
