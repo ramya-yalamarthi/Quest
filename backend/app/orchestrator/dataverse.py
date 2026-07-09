@@ -127,7 +127,7 @@ class DataverseClient:
             proven resolution worth learning from.
         """
         params = {
-            "$select": "incidentid,ticketnumber,title,description,prioritycode,statecode,statuscode,createdon",
+            "$select": "incidentid,ticketnumber,title,description,prioritycode,statecode,statuscode,createdon,overriddencreatedon",
             "$orderby": "createdon desc",
             "$top": str(top),
         }
@@ -152,11 +152,12 @@ class DataverseClient:
             "priority": c.get("prioritycode"),
             "status": c.get("statuscode"),
             "state": c.get("statecode"),       # 0 active/open, 1 resolved, 2 cancelled
-            "created_on": c.get("createdon"),
+            # Use overriddencreatedon if set (backdated demo/migration records); fall back to createdon
+            "created_on": c.get("overriddencreatedon") or c.get("createdon"),
         }
 
     _CASE_SELECT = ("incidentid,ticketnumber,title,description,prioritycode,"
-                    "statecode,statuscode,createdon")
+                    "statecode,statuscode,createdon,overriddencreatedon")
 
     def get_case(self, case_id: str) -> Optional[dict]:
         """Fetch one Case by its GUID (for the event-driven webhook). Returns

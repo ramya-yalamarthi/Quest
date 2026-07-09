@@ -12,6 +12,44 @@ from app.orchestrator.workflows import find_workflow
 
 # (title, url, summary, category, times_recommended, times_resolved, total_resolution_hours)
 _RAW = [
+    # ── D365 Finance KB articles ──────────────────────────────────────────────
+    ("Vendor invoice stuck in Pending — fiscal period and posting profile fix",
+     "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/vendor-invoices-overview",
+     "Vendor invoices fail to post when the fiscal period is closed for the AP module or the vendor "
+     "posting profile is missing a summary account. Open the period in Ledger calendars for the AP "
+     "module, verify the posting profile, and confirm three-way match is complete before reposting.",
+     "Accounts Payable / vendor invoices", 52, 46, 18.5),
+    ("Unbalanced GL journal — voucher and penny difference troubleshooting",
+     "https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/general-journal-processing",
+     "GL journals fail to post when total debits do not equal total credits on a voucher, or when "
+     "a rounding penny difference exceeds the configured tolerance. Enable 'Penny difference tolerance' "
+     "in GL Parameters and verify all lines have valid main accounts and dimension combinations.",
+     "General Ledger / journal posting", 44, 38, 14.2),
+    ("Fixed asset depreciation proposal not generating transactions",
+     "https://learn.microsoft.com/en-us/dynamics365/finance/fixed-assets/depreciation-methods-conventions",
+     "The depreciation proposal generates zero entries when the asset's depreciation start date is "
+     "set in the future, the depreciation profile is missing, or the asset book period is closed. "
+     "Verify the start date, profile assignment, and that the book calendar period is open.",
+     "Fixed Assets / depreciation", 38, 33, 11.8),
+    ("Customer payment not settling against open invoice — AR settlement fix",
+     "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-receivable/settle-partial-customer-payment",
+     "Customer payments fail to settle when posted to a different account than the invoice, when "
+     "a currency mismatch exists, or when the settlement date falls outside the cash discount period. "
+     "Use Settle open transactions to manually match the payment to the correct invoice.",
+     "Accounts Receivable / customer payment", 41, 35, 13.1),
+    ("DMF import staging table error — cleanup and reimport procedure",
+     "https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/data-entities/data-import-export-job",
+     "Data Management Framework imports fail when the staging table contains stale records from a "
+     "previous failed run. Clean up staging via Data Management → Job history → Clean up staging, "
+     "correct the source file based on the error log, and re-run the import.",
+     "Batch Jobs / integration", 35, 29, 9.7),
+    ("Negative inventory adjustment after sales order over-pick",
+     "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/inventory-journals",
+     "Negative on-hand inventory results from over-picking, missing product receipts, or incorrect "
+     "inventory transactions. Post an inventory adjustment journal with a positive quantity to correct "
+     "the balance, then investigate the root cause transaction using inventory transaction history.",
+     "Inventory / on-hand", 29, 24, 8.4),
+]
     ("NodePool quota exhausted — capacity grace period and manual drain procedure",
      "https://karpenter.sh/docs/concepts/nodepools/",
      "When a NodePool's instance-type/capacity quota is exhausted, Karpenter can't "
@@ -84,24 +122,59 @@ def _category_keywords(category: str) -> list[str]:
     return [w.strip().lower() for part in category.split("/") for w in part.split() if len(w.strip()) > 2]
 
 
+_FINANCE_KEYWORDS = [
+    "vendor invoice", "accounts payable", "accounts receivable", "general ledger",
+    "fixed asset", "depreciation", "fiscal period", "voucher", "ledger journal",
+    "ap invoice", "ar invoice", "customer invoice", "inventory adjustment",
+    "batch job", "dmf", "data entity", "d365 finance", "dynamics finance",
+    "posting profile", "tax", "vat", "gst", " gl ", " ap ", " ar ", " fa ",
+]
+
+_FINANCE_CATEGORIES = {
+    "accounts payable", "vendor invoices", "general ledger", "journal posting",
+    "fixed assets", "depreciation", "accounts receivable", "customer payment",
+    "batch jobs", "integration", "inventory", "on-hand",
+}
+
+
+def _is_finance_ticket(haystack: str) -> bool:
+    return any(k in haystack for k in _FINANCE_KEYWORDS)
+
+
 def match_kb_docs(team: str, title: str, description: str, top_k: int = 3) -> tuple[list[dict], bool]:
     """Rank the static catalog by keyword overlap against the routed team +
     ticket text, tie-broken by success rate (the best-proven doc first).
-    Falls back to the catalog's best-proven docs if nothing matched.
+
+    Domain-aware: Finance tickets are matched only against Finance KB articles,
+    and Kubernetes tickets against Kubernetes articles, so recommendations are
+    never cross-domain.
 
     Returns (ranked_docs, gap_detected). gap_detected=True means no catalog doc
     matched by keyword — the returned docs are the best-proven fallbacks, not
     genuine matches, signalling that no KB article exists for this issue type yet."""
     haystack = f"{team} {title} {description}".lower()
+    finance = _is_finance_ticket(haystack)
+
+    # Filter catalog to domain-relevant articles only
+    domain_catalog = [
+        doc for doc in KB_CATALOG
+        if finance == any(cat in doc["category"].lower() for cat in _FINANCE_CATEGORIES)
+    ]
+    if not domain_catalog:
+        domain_catalog = KB_CATALOG  # safety fallback
+
     scored = []
-    for doc in KB_CATALOG:
+    for doc in domain_catalog:
         score = sum(1 for k in _category_keywords(doc["category"]) if k in haystack)
         if doc["category"].lower() in haystack:
             score += 2
+        # Also score on keyword overlap with title/summary
+        summary_kws = [w.strip().lower() for w in doc["title"].split() if len(w) > 3]
+        score += sum(1 for k in summary_kws if k in haystack)
         scored.append((score, doc))
     scored.sort(key=lambda t: (-t[0], -t[1]["success_rate"]))
     ranked = [d for s, d in scored if s > 0][:top_k]
     gap_detected = not ranked
     if gap_detected:
-        ranked = sorted(KB_CATALOG, key=lambda d: -d["success_rate"])[:top_k]
+        ranked = sorted(domain_catalog, key=lambda d: -d["success_rate"])[:top_k]
     return ranked, gap_detected

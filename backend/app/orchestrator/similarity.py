@@ -12,6 +12,7 @@ caller grounds on the 4 reference tickets instead.
 from __future__ import annotations
 
 import math
+import re as _re
 from typing import Callable, Optional
 
 from app.orchestrator.appconfig import env_float
@@ -57,6 +58,33 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
+def _keyword_similarity(query: dict, pool: list[dict],
+                        top_k: int = 5, min_score: float = 0.0) -> list[dict]:
+    """Jaccard-based keyword similarity — used when embeddings are not configured.
+    Scores by shared word overlap so Finance tickets match Finance corpus cases
+    and Kubernetes tickets match Kubernetes corpus cases without any ML model."""
+    def _tokens(text: str) -> set:
+        return set(_re.findall(r'\b[a-z]{3,}\b', text.lower()))
+
+    q_tok = _tokens(case_text(query))
+    if not q_tok:
+        return []
+    results = []
+    for c in pool:
+        c_tok = _tokens(case_text(c))
+        if not c_tok:
+            continue
+        inter = len(q_tok & c_tok)
+        union = len(q_tok | c_tok)
+        jaccard = inter / union if union else 0.0
+        if jaccard >= min_score:
+            # Map to display range: Jaccard 0.50 → 1.0, 0.175 → 0.35 (MIN_DISPLAY)
+            display = min(round(jaccard * 2.0, 4), 1.0)
+            results.append({**c, "score": round(jaccard, 4), "display_score": display})
+    results.sort(key=lambda x: -x["score"])
+    return results[:top_k]
+
+
 def rank_similar(
     query: dict,
     corpus: list[dict],
@@ -78,7 +106,7 @@ def rank_similar(
 
     vectors = embed([case_text(query)] + [case_text(c) for c in pool])
     if not vectors or len(vectors) != len(pool) + 1:
-        return []
+        return _keyword_similarity(query, pool, top_k=top_k, min_score=min_score)
 
     qv, rest = vectors[0], vectors[1:]
     scored = [(c, _cosine(qv, v)) for c, v in zip(pool, rest)]
