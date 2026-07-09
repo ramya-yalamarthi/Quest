@@ -30,6 +30,7 @@ ROSTER_PATH = os.getenv("ROSTER_PATH") or os.path.join(_BACKEND, "data", "engine
 # Team (from RoutingAgent) -> extra keyword aliases beyond the team name itself,
 # for matching against an engineer's specialty / skills tags.
 _TEAM_ALIASES = {
+    # ── Kubernetes / Karpenter ──────────────────────────────
     "Provisioning / scheduling": ["provisioning", "scheduling", "nodepool", "pending-pods"],
     "Autoscaling / scaling": ["autoscaling", "scaling", "capacity", "scale-down"],
     "Consolidation / disruption": ["consolidation", "disruption", "drift"],
@@ -39,6 +40,20 @@ _TEAM_ALIASES = {
     "Config / API (EC2NodeClass)": ["ec2nodeclass", "subnet", "iam", "ami", "aws", "config", "api"],
     "Networking": ["networking", "dns", "vpc", "tls"],
     "Docs": ["docs", "documentation"],
+
+    # ── Dynamics 365 Finance ────────────────────────────────
+    "General Ledger / Accounting": ["gl", "ledger", "journal", "posting", "fiscal", "accounting",
+                                     "chart of accounts", "coa", "trial balance", "period close"],
+    "Accounts Payable": ["ap", "vendor", "invoice", "payment", "voucher", "accounts payable",
+                         "vendor invoice", "purchase order", "po", "three-way match"],
+    "Accounts Receivable": ["ar", "customer invoice", "collection", "accounts receivable",
+                             "aging", "dunning", "credit limit", "customer payment"],
+    "Fixed Assets": ["fixed asset", "depreciation", "asset book", "acquisition",
+                     "disposal", "asset register", "fa module"],
+    "Inventory / Warehouse": ["inventory", "warehouse", "wms", "stock", "on-hand",
+                               "bom", "bill of materials", "item", "product receipt"],
+    "Batch Jobs / Integration": ["batch", "integration", "dmf", "data entity", "odata",
+                                  "data management", "import", "export", "recurring", "recurrence"],
 }
 
 

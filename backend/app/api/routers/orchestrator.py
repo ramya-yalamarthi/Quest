@@ -446,8 +446,8 @@ _ESCALATION_KEYWORDS = [
     "disappointed", "frustrated", "complaint", "terrible", "legal", "cancel",
 ]
 
-# Fields checked for presence in ticket text; label → keywords that confirm it's present
-_MISSING_INFO_CHECKS = [
+# Fields checked per domain; label → keywords that confirm the field is already present
+_MISSING_INFO_KUBERNETES = [
     ("cluster name or ID", ["cluster name", "cluster id", "clusterid", "cluster:"]),
     ("Karpenter version", ["karpenter v", "version:", "karpenter version", "v0.", "v1."]),
     ("cloud provider region", ["us-east", "us-west", "eu-west", "eu-central", "ap-southeast",
@@ -457,10 +457,32 @@ _MISSING_INFO_CHECKS = [
                                        "traceback", "logs:", "stderr", "output:"]),
 ]
 
+_MISSING_INFO_FINANCE = [
+    ("legal entity or company code", ["legal entity", "company code", "company:", "entity:"]),
+    ("Finance module (GL/AP/AR/FA/Inventory)", ["general ledger", "accounts payable", "accounts receivable",
+                                                 "fixed asset", "inventory", " gl ", " ap ", " ar ", " fa "]),
+    ("error message from the infolog", ["infolog", "error:", "warning:", "failed to post",
+                                         "cannot post", "blocked", "exception"]),
+    ("voucher number or transaction date", ["voucher", "transaction date", "journal number",
+                                             "invoice number", "posting date"]),
+]
+
+def _detect_domain(haystack: str) -> str:
+    """Classify the ticket domain from its text for domain-aware missing-info checks."""
+    finance_kws = ["general ledger", "accounts payable", "accounts receivable", "fixed asset",
+                   "voucher", "ledger", "fiscal period", "d365 finance", "dynamics finance",
+                   "journal posting", "vendor invoice", "customer invoice", "depreciation",
+                   "inventory", "bill of materials", " gl ", " ap ", " ar "]
+    if any(k in haystack for k in finance_kws):
+        return "finance"
+    return "kubernetes"
+
 
 def _detect_missing_info(ticket: dict) -> dict | None:
     haystack = f"{ticket.get('title') or ''} {ticket.get('description') or ''}".lower()
-    missing = [label for label, kws in _MISSING_INFO_CHECKS if not any(k in haystack for k in kws)]
+    domain = _detect_domain(haystack)
+    checks = _MISSING_INFO_FINANCE if domain == "finance" else _MISSING_INFO_KUBERNETES
+    missing = [label for label, kws in checks if not any(k in haystack for k in kws)]
     raw_desc = (ticket.get("description") or "").strip()
     if len(raw_desc) < 120 and not missing:
         missing.append("detailed description (current description is too brief to diagnose)")

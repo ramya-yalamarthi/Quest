@@ -94,6 +94,62 @@ ARTICLES = [
         "Networking",
         9, 5, 2.7,
     ),
+
+    # ── Dynamics 365 Finance ────────────────────────────────────────────────────
+    (
+        "Vendor invoice posting fails — fiscal period not open",
+        "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/vendor-invoices-overview",
+        "When a vendor invoice cannot be posted and the infolog shows 'Period is not open', "
+        "the target fiscal period in the General Ledger calendar is either closed or does not exist. "
+        "Open the period in General Ledger > Calendars > Ledger calendars, or post to a different date.",
+        "Accounts Payable",
+        42, 38, 0.5,
+    ),
+    (
+        "General ledger journal cannot be posted — unbalanced voucher",
+        "https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/general-journal-processing",
+        "An unbalanced voucher error means debits do not equal credits on one or more voucher lines. "
+        "Check the offset account configuration on the journal name, verify currency rounding settings, "
+        "and confirm that no lines have been accidentally deleted.",
+        "General Ledger / Accounting",
+        55, 51, 0.4,
+    ),
+    (
+        "Fixed asset depreciation not running in batch",
+        "https://learn.microsoft.com/en-us/dynamics365/finance/fixed-assets/depreciation-methods-conventions",
+        "If the depreciation proposal batch job completes without creating transactions, check that the "
+        "asset value model has a depreciation profile assigned, the acquisition date falls within the "
+        "selected period, and the batch job user has the correct security role.",
+        "Fixed Assets",
+        28, 24, 0.8,
+    ),
+    (
+        "Customer payment not settling against invoice — marking mismatch",
+        "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-receivable/settle-transactions-overview",
+        "When a customer payment exists but does not settle against an open invoice, the most common "
+        "causes are: currency mismatch, settlement tolerance exceeded, or the payment and invoice are "
+        "in different legal entities. Use Accounts Receivable > Transactions > Settle open transactions.",
+        "Accounts Receivable",
+        33, 29, 0.6,
+    ),
+    (
+        "Data entity import fails with staging table error",
+        "https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/data-entities/data-import-export-job",
+        "A staging table error during DMF import usually means the staging table has stale records from "
+        "a previous failed run, or the field mapping is missing a required column. Clear the staging data "
+        "from the job history, re-map fields, and re-run the import in validate-only mode first.",
+        "Batch Jobs / Integration",
+        37, 31, 1.1,
+    ),
+    (
+        "Inventory on-hand shows negative quantity — adjustment procedure",
+        "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/inventory-adjustment-journal",
+        "Negative on-hand inventory occurs when sales or production transactions consume stock before "
+        "the corresponding receipt is posted. Run the Inventory closing procedure, then post an "
+        "inventory adjustment journal to correct the physical quantity to the correct value.",
+        "Inventory / Warehouse",
+        21, 17, 1.4,
+    ),
 ]
 
 
