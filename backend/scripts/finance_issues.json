@@ -1,0 +1,282 @@
+[
+  {
+    "number": 1001,
+    "title": "Vendor invoice posting fails with 'Fiscal period is not open' error",
+    "body": "**Environment:** D365 Finance 10.0.38, Legal entity USMF\n\n**Problem:**\nWhen attempting to post a vendor invoice for vendor account V-000001, the system throws the error: 'The fiscal period 2024-06 is not open for the General Ledger module.' The invoice date is 15-Jun-2024.\n\n**Steps to reproduce:**\n1. Go to Accounts Payable > Vendor invoices > Pending vendor invoices\n2. Open invoice INV-20240615-001\n3. Click Post\n4. Error appears immediately\n\n**What was tried:**\n- Verified the invoice date is correct\n- Checked vendor account is active\n- Tried posting with a different user — same error\n\n**Expected:** Invoice should post to the June 2024 period\n**Actual:** Posting fails — fiscal period blocked",
+    "url": "https://community.dynamics.com/forums/thread/d365-finance-vendor-invoice-fiscal-period",
+    "source": "community"
+  },
+  {
+    "number": 1002,
+    "title": "General ledger journal cannot be posted — voucher is not balanced",
+    "body": "**Environment:** D365 Finance 10.0.40, Legal entity DEMF\n\n**Problem:**\nA daily GL journal (GJH-00142) cannot be posted. The infolog shows: 'The voucher DEMO-000892 is not balanced. The total for debit is 5000.00 and the total for credit is 4999.99.'\n\n**Details:**\n- Journal name: DailyJournal\n- Voucher count: 12\n- Currency: EUR\n- All lines appear correct in the UI\n\n**What was tried:**\n- Recalculated amounts manually — they appear balanced\n- Deleted and re-entered the last line — same result\n- Checked currency exchange rates — rates are correct\n\n**Root cause suspicion:** Possible rounding difference in currency conversion",
+    "url": "https://community.dynamics.com/forums/thread/gl-journal-unbalanced-voucher-d365",
+    "source": "community"
+  },
+  {
+    "number": 1003,
+    "title": "Fixed asset depreciation proposal not generating transactions",
+    "body": "**Environment:** D365 Finance 10.0.39, Legal entity USRT\n\n**Problem:**\nRunning the depreciation proposal for Fixed Assets book 'GAAP' for period July 2024 generates zero transactions. The batch job completes successfully with no errors but no depreciation lines are created.\n\n**Asset details:**\n- Asset group: BUILDING\n- Book: GAAP\n- Depreciation method: Straight line service life\n- Acquisition date: 01-Jan-2020\n- Service life: 20 years\n\n**What was tried:**\n- Ran the proposal manually (non-batch) — same result\n- Checked the asset value model — depreciation profile is assigned\n- Verified the from/to dates for the proposal are correct\n- Checked that the period is open in the fiscal calendar",
+    "url": "https://community.dynamics.com/forums/thread/fixed-asset-depreciation-zero-transactions",
+    "source": "community"
+  },
+  {
+    "number": 1004,
+    "title": "Customer payment not settling against open invoice — marking dialog empty",
+    "body": "**Environment:** D365 Finance 10.0.37, Legal entity GBSI\n\n**Problem:**\nA customer payment of GBP 12,500 from customer account C-000045 cannot be settled against their open invoice INV-GBP-0892. When opening the settlement dialog (Settle open transactions), the invoice does not appear in the list.\n\n**Details:**\n- Payment date: 10-Jul-2024\n- Invoice date: 15-Jun-2024\n- Invoice amount: GBP 12,500.00\n- Both are in the same legal entity (GBSI)\n\n**What was tried:**\n- Checked the payment journal is not already posted to a different invoice\n- Verified customer account matches on both documents\n- Checked the invoice is in Open status\n- Tried using the Settle open transactions form directly",
+    "url": "https://community.dynamics.com/forums/thread/customer-payment-settlement-missing-invoice",
+    "source": "community"
+  },
+  {
+    "number": 1005,
+    "title": "Data Management Framework import fails — staging table has duplicate key error",
+    "body": "**Environment:** D365 Finance 10.0.41\n\n**Problem:**\nA DMF import job for entity 'Customer Groups V2' fails at the staging step with error: 'Cannot insert duplicate key row in object dbo.CUSTCUSTOMERGROUPS_STAGING with unique index IX_STAGINGID.'\n\n**Job details:**\n- Data project: Customer_Import_July2024\n- Entity: Customer Groups V2\n- File format: CSV, 245 rows\n- Previous import: Succeeded 2 weeks ago\n\n**What was tried:**\n- Cleared the staging data via the job history — error persists\n- Deleted and recreated the data project\n- Tried with a 5-row test file — same error on row 1\n- Checked the CSV for duplicate IDs — none found",
+    "url": "https://community.dynamics.com/forums/thread/dmf-import-staging-duplicate-key-error",
+    "source": "community"
+  },
+  {
+    "number": 1006,
+    "title": "Inventory on-hand shows negative quantity after sales order shipment",
+    "body": "**Environment:** D365 Finance / Supply Chain 10.0.38, Legal entity USMF\n\n**Problem:**\nAfter posting a packing slip for sales order SO-000789, item D0001 shows a negative on-hand quantity of -50 EA in warehouse 13.\n\n**Timeline:**\n- 08:00 — Sales order SO-000789 created for 100 EA of D0001\n- 09:30 — Packing slip posted — quantity 100 EA shipped\n- 09:35 — On-hand shows -50 EA\n\n**On-hand before shipment:** 50 EA (should have blocked shipment of 100)\n\n**What was tried:**\n- Checked if 'Physical negative inventory' is allowed for the item model group — it is enabled\n- Reviewed recent transactions — a separate transfer order may have consumed 50 EA simultaneously",
+    "url": "https://community.dynamics.com/forums/thread/negative-inventory-after-sales-shipment",
+    "source": "community"
+  },
+  {
+    "number": 1007,
+    "title": "Batch job for sales order confirmation stuck in 'Executing' status for 6 hours",
+    "body": "**Environment:** D365 Finance 10.0.40\n\n**Problem:**\nA batch job to confirm 1,200 sales orders has been in 'Executing' status for 6 hours. Normal run time is 20 minutes. The batch server shows the job is assigned to batch server AOS-PROD-02.\n\n**Job details:**\n- Class: SalesConfirmJournalPost\n- Batch group: High-priority\n- Start time: 02:00 UTC\n- Current status: Executing (6h elapsed)\n\n**Impact:** Morning orders are not confirmed and customer notifications are delayed.\n\n**What was tried:**\n- Checked AOS-PROD-02 server — CPU at 95%, memory at 89%\n- Cannot cancel the job — cancel button is greyed out\n- Other batch jobs in the same group are queued and not starting",
+    "url": "https://community.dynamics.com/forums/thread/batch-job-stuck-executing-d365",
+    "source": "community"
+  },
+  {
+    "number": 1008,
+    "title": "AP three-way match failing — product receipt quantity mismatch",
+    "body": "**Environment:** D365 Finance 10.0.39, Legal entity USMF\n\n**Problem:**\nVendor invoice INV-V001-0445 is blocked in the matching validation with error: 'Product receipt quantity does not match invoice quantity.' The invoice is for 500 units but the matched product receipt shows 450 units.\n\n**Purchase order:** PO-000234\n**Vendor:** V-000234 (Northwind Traders)\n**Item:** M0001\n\n**What was tried:**\n- Checked PO — original quantity was 500 units\n- Product receipt was posted for 450 units (partial delivery accepted)\n- Remaining 50 units are on backorder\n- Vendor has invoiced for the full 500 units",
+    "url": "https://community.dynamics.com/forums/thread/ap-three-way-match-quantity-mismatch",
+    "source": "community"
+  },
+  {
+    "number": 1009,
+    "title": "Period-end close blocked — sub-ledger journals not transferred to GL",
+    "body": "**Environment:** D365 Finance 10.0.41, Legal entity DEMF\n\n**Problem:**\nThe June 2024 period-end close is blocked. The close checklist shows 'Transfer sub-ledger journals to GL' as incomplete. Running the transfer process results in: '0 journals transferred, 3 journals in error.'\n\n**Error in Transfer details:**\n- Journal APLEDGER-20240628-001: 'Account DEU-110101 does not allow manual entry'\n- Journal ARLEDGER-20240629-002: 'Dimension combination is not valid'\n- Journal BANK-20240630-001: 'Currency EUR does not match the ledger currency'\n\n**Impact:** Cannot close June period. July transactions are accumulating in an open period.",
+    "url": "https://community.dynamics.com/forums/thread/period-close-subledger-transfer-blocked",
+    "source": "community"
+  },
+  {
+    "number": 1010,
+    "title": "Fixed asset disposal creating wrong financial dimensions on gain/loss account",
+    "body": "**Environment:** D365 Finance 10.0.38\n\n**Problem:**\nWhen disposing of fixed asset FA-00089 (a vehicle), the system posts the gain/loss to account 180100 but applies incorrect financial dimensions. The dimension should be Department=SALES but it is posting as Department=BLANK.\n\n**Disposal details:**\n- Asset: FA-00089\n- Book: GAAP\n- Disposal date: 30-Jun-2024\n- Sale price: USD 5,000\n- Net book value: USD 8,000 (expected loss of USD 3,000)\n\n**What was tried:**\n- Checked the fixed asset posting profile — dimension setup looks correct\n- Re-ran the disposal with dimension override — same result",
+    "url": "https://community.dynamics.com/forums/thread/fixed-asset-disposal-wrong-dimensions",
+    "source": "community"
+  },
+  {
+    "number": 1011,
+    "title": "Bank reconciliation — statement line not matching to ledger transaction",
+    "body": "**Environment:** D365 Finance 10.0.40, Legal entity GBSI\n\n**Problem:**\nDuring bank reconciliation for July 2024, bank statement line showing GBP 15,000 credit on 05-Jul cannot be matched to any open ledger transaction. The payment exists in the bank statement but no corresponding customer payment journal is found.\n\n**Bank account:** BARCLAYS-GBP-001\n**Statement date:** 05-Jul-2024\n**Amount:** GBP 15,000 credit\n\n**What was tried:**\n- Searched all customer payment journals for the period — none match this amount\n- Checked if a manual bank journal was posted — none found\n- Verified the statement import file — amount and date are correct",
+    "url": "https://community.dynamics.com/forums/thread/bank-reconciliation-unmatched-statement-line",
+    "source": "community"
+  },
+  {
+    "number": 1012,
+    "title": "Accounts receivable aging report showing wrong bucket for invoice",
+    "body": "**Environment:** D365 Finance 10.0.39\n\n**Problem:**\nInvoice INV-0056789 for customer C-000123 is appearing in the '91-120 days' aging bucket on the AR aging report, but the invoice date is 25-Jun-2024 and the report is run on 10-Jul-2024 — it should be in the '1-30 days' bucket.\n\n**Invoice details:**\n- Invoice number: INV-0056789\n- Invoice date: 25-Jun-2024\n- Due date: 25-Jul-2024\n- Amount: USD 8,750\n\n**What was tried:**\n- Re-ran the aging report with different as-of dates — same wrong bucket\n- Checked the aging period definition — periods look correct\n- Verified the invoice date in the transaction form — shows 25-Jun-2024",
+    "url": "https://community.dynamics.com/forums/thread/ar-aging-wrong-bucket-d365",
+    "source": "community"
+  },
+  {
+    "number": 1013,
+    "title": "Intercompany sales order not creating corresponding purchase order",
+    "body": "**Environment:** D365 Finance 10.0.41, Legal entities USMF and USRT\n\n**Problem:**\nAn intercompany sales order created in USMF for trading partner USRT is not automatically generating the corresponding purchase order in USRT. This was working correctly until last week.\n\n**Setup:**\n- Intercompany trade relation: USMF → USRT (configured)\n- Sales order: SO-IC-000456 in USMF\n- Expected purchase order in USRT: not created\n\n**What was tried:**\n- Checked intercompany trade agreement — active and correct\n- Verified the item is set up in both legal entities\n- Checked Event log — no errors shown\n- Tried with a new test sales order — same issue",
+    "url": "https://community.dynamics.com/forums/thread/intercompany-sales-order-no-purchase-order",
+    "source": "community"
+  },
+  {
+    "number": 1014,
+    "title": "Tax calculation error on vendor invoice — wrong VAT code applied",
+    "body": "**Environment:** D365 Finance 10.0.38, Legal entity DEMF (Germany)\n\n**Problem:**\nVendor invoice from vendor DE-V-001 is automatically applying VAT code STD (19%) but the vendor is registered for VAT reversal charge — should use RVS (0% with reverse charge). This is causing incorrect VAT reporting.\n\n**Invoice details:**\n- Vendor: DE-V-001\n- Country: Germany\n- Transaction type: Service purchase\n- Expected VAT: Reverse charge (0%)\n- Actual VAT applied: Standard 19%\n\n**What was tried:**\n- Checked vendor record — VAT registration number is filled\n- Checked item sales tax group on the purchase line\n- Verified the tax group combination in Tax > Setup",
+    "url": "https://community.dynamics.com/forums/thread/vendor-invoice-wrong-vat-reverse-charge",
+    "source": "community"
+  },
+  {
+    "number": 1015,
+    "title": "Year-end close job fails with timeout on large ledger dataset",
+    "body": "**Environment:** D365 Finance 10.0.40, Legal entity USMF\n\n**Problem:**\nThe fiscal year-end closing job for FY2023 is failing after approximately 4 hours with a timeout error. The company has approximately 2.8 million GL transactions for FY2023.\n\n**Error:** 'The batch task timed out. The session has been terminated.'\n\n**Job details:**\n- Template: Year-end close\n- Legal entities: USMF, USRT, USPI (3 entities, run together)\n- Previous successful run: FY2022 (completed in 2.5 hours)\n\n**What was tried:**\n- Ran individual legal entities separately — USMF alone also times out\n- Checked database fragmentation — indexes are fragmented at 78%\n- Increased batch server timeout setting\n- Contacted Microsoft support — awaiting response",
+    "url": "https://community.dynamics.com/forums/thread/year-end-close-timeout-large-dataset",
+    "source": "community"
+  },
+  {
+    "number": 1016,
+    "title": "Purchase order line cannot be received — item is blocked for receipts",
+    "body": "**Environment:** D365 Finance / Supply Chain 10.0.39\n\n**Problem:**\nAttempting to post a product receipt against PO-000567 line 1 for item B0001 results in: 'Item B0001 is blocked for receipts in warehouse 13.'\n\n**Details:**\n- Item B0001 was set up 3 months ago and has been receiving normally\n- No change was made to the item setup recently\n- Other items on the same PO receive without issue\n- The block does not appear in the item's storage dimension group settings\n\n**What was tried:**\n- Checked item B0001 > Manage inventory > Blocked — shows Not blocked\n- Checked warehouse 13 setup — no receipt restrictions found\n- Tried a different warehouse — same error",
+    "url": "https://community.dynamics.com/forums/thread/purchase-order-item-blocked-receipts",
+    "source": "community"
+  },
+  {
+    "number": 1017,
+    "title": "Budgeting — actual vs budget comparison shows incorrect variance",
+    "body": "**Environment:** D365 Finance 10.0.41\n\n**Problem:**\nThe Budget vs Actual report for cost centre CC-SALES for Q2 2024 is showing a variance of USD 125,000 that does not match the manually calculated variance. The report shows actual spend of USD 890,000 against budget of USD 750,000, but the finance team calculates actual at USD 815,000.\n\n**What was tried:**\n- Verified the budget register entries for CC-SALES Q2 — total is USD 750,000 (correct)\n- Ran the General Ledger trial balance for CC-SALES for Q2 — shows USD 815,000\n- The discrepancy of USD 75,000 appears to be from a misclassified dimension on two journals",
+    "url": "https://community.dynamics.com/forums/thread/budget-actual-variance-incorrect-d365",
+    "source": "community"
+  },
+  {
+    "number": 1018,
+    "title": "Dunning letter printing blank — customer balance showing zero incorrectly",
+    "body": "**Environment:** D365 Finance 10.0.38\n\n**Problem:**\nWhen running dunning letters for overdue customers, customer C-000789 receives a blank dunning letter (no invoice details). The customer has 3 overdue invoices totalling USD 34,500.\n\n**What was tried:**\n- Checked the dunning case — all 3 invoices are selected\n- Ran the letter print preview — shows no invoice lines\n- Verified the customer's dunning code is set to the correct sequence\n- Tried running with a different dunning note template — same result\n- Checked if invoices are truly open — all show status 'Open' in customer transactions",
+    "url": "https://community.dynamics.com/forums/thread/dunning-letter-blank-customer-balance",
+    "source": "community"
+  },
+  {
+    "number": 1019,
+    "title": "Expense report stuck in workflow — approver not receiving notification",
+    "body": "**Environment:** D365 Finance 10.0.40\n\n**Problem:**\nExpense report EXP-00234 submitted by employee Emma Wilson is stuck at the 'Manager Approval' step. Her manager (John Smith) has not received a workflow notification email or a task in his D365 worklist. The report has been pending for 3 business days.\n\n**Workflow:** Expense Report Approval v2.0\n\n**What was tried:**\n- Checked the workflow history — shows 'Assigned to John Smith' step\n- Verified John Smith's email address in the system — correct\n- Checked if email notifications are enabled for the workflow — yes\n- Tested with a different expense report — same approver, same issue\n- John Smith can access D365 and has the correct role",
+    "url": "https://community.dynamics.com/forums/thread/expense-report-workflow-stuck-no-notification",
+    "source": "community"
+  },
+  {
+    "number": 1020,
+    "title": "Cash flow forecast showing incorrect values after bank account setup change",
+    "body": "**Environment:** D365 Finance 10.0.39\n\n**Problem:**\nAfter adding a new bank account HSBC-USD-002 last week, the Cash flow forecast is showing inflated values. The forecast shows USD 2.4M available cash but the actual bank balance across all accounts is USD 1.1M.\n\n**What was tried:**\n- Checked the Cash flow forecast setup — new bank account was not excluded\n- Ran the forecast recalculation — values remain inflated\n- Checked the liquidity account setup for HSBC-USD-002 — it is mapped to two ledger accounts (double counting suspected)\n- Removed the new bank account from the forecast — values returned to correct",
+    "url": "https://community.dynamics.com/forums/thread/cash-flow-forecast-inflated-after-bank-setup",
+    "source": "community"
+  },
+  {
+    "number": 1021,
+    "title": "Landed cost allocation fails — cost not distributing across purchase lines",
+    "body": "**Environment:** D365 Finance / Supply Chain 10.0.41\n\n**Problem:**\nLanded cost (freight charge of USD 1,200) for voyage VOY-000123 is not being allocated across the 5 purchase order lines. Running the auto-cost allocation returns 'No eligible lines found for distribution.'\n\n**Setup:**\n- Allocation method: Quantity\n- Cost category: Freight\n- PO lines: 5 lines, all with quantity > 0\n\n**What was tried:**\n- Tried different allocation methods (Volume, Value) — same error\n- Verified items have weight and volume filled — they do\n- Checked if PO lines are confirmed — all confirmed\n- Created a new test voyage with 2 lines — same error",
+    "url": "https://community.dynamics.com/forums/thread/landed-cost-allocation-no-eligible-lines",
+    "source": "community"
+  },
+  {
+    "number": 1022,
+    "title": "1099 reporting — vendor transactions missing from MISC box 7",
+    "body": "**Environment:** D365 Finance 10.0.38, Legal entity USMF (US)\n\n**Problem:**\nRunning the 1099 summary for vendor V-NEC-001 shows USD 0 in box 7 (Non-employee compensation), but the vendor was paid USD 85,000 in service fees during 2023. These payments should appear in box 7.\n\n**What was tried:**\n- Checked the vendor record — 1099 field shows 'MISC-07'\n- Reviewed all payment journals for V-NEC-001 in 2023 — payments exist\n- Checked individual payment lines — the 1099 box is blank on each line\n- The 1099 box was set on the vendor AFTER the payments were made",
+    "url": "https://community.dynamics.com/forums/thread/1099-vendor-transactions-missing-box-7",
+    "source": "community"
+  },
+  {
+    "number": 1023,
+    "title": "Production order reporting as finished but cost not posted to GL",
+    "body": "**Environment:** D365 Finance / Supply Chain 10.0.40\n\n**Problem:**\nProduction order PRD-000456 for finished good FG-001 has been reported as finished and the quantity is in inventory, but no cost entry has been posted to the General Ledger. The WIP account still shows the full production cost of USD 45,000.\n\n**Production order details:**\n- Item: FG-001\n- Quantity: 500 EA\n- Status: Reported as finished\n- Cost posted: No (WIP not cleared)\n\n**What was tried:**\n- Ran 'End' on the production order — error: 'Standard cost is not defined for item FG-001'\n- Checked item FG-001 costing — standard cost entry exists but activation date is in the future",
+    "url": "https://community.dynamics.com/forums/thread/production-order-cost-not-posted-gl",
+    "source": "community"
+  },
+  {
+    "number": 1024,
+    "title": "Financial report designer cannot connect to Report Designer — connection refused",
+    "body": "**Environment:** D365 Finance 10.0.39, on-premises Report Designer client\n\n**Problem:**\nThe Financial Reporting Designer desktop client cannot connect to the Report Designer service. Error: 'Cannot connect to the server. Please verify the server is running and the URL is correct.' This affects all users in the finance team (6 users).\n\n**Error details:**\n- URL configured: https://finreporting.contoso.com:443\n- Error code: CONNECTION_REFUSED\n- Last successful connection: Yesterday 17:00\n\n**What was tried:**\n- Restarted the Financial Reporting service on the report server — service starts but connection still refused\n- Checked firewall rules — port 443 is open\n- Tried from a different client machine — same error\n- Checked Windows Event Log on report server — certificate expired last night at 23:59",
+    "url": "https://community.dynamics.com/forums/thread/financial-report-designer-connection-refused",
+    "source": "community"
+  },
+  {
+    "number": 1025,
+    "title": "Vendor payment proposal not picking up invoices past due date",
+    "body": "**Environment:** D365 Finance 10.0.41\n\n**Problem:**\nThe vendor payment proposal run on 10-Jul-2024 is not including 14 vendor invoices that are past their due date. These invoices are all from vendor group DOMESTIC and have due dates between 01-Jun and 30-Jun-2024.\n\n**Payment proposal settings:**\n- Method of payment: CHECK\n- Due date: 10-Jul-2024\n- Payment date: 10-Jul-2024\n\n**What was tried:**\n- Ran the proposal with 'Include invoices on hold' checked — still not appearing\n- Verified the invoices are approved and posted\n- Checked if the payment journal has a different legal entity filter — same entity\n- Ran a test with a single invoice — it was also not picked up",
+    "url": "https://community.dynamics.com/forums/thread/vendor-payment-proposal-missing-invoices",
+    "source": "community"
+  },
+  {
+    "number": 1026,
+    "title": "Consolidation process failing — currency translation differences not balancing",
+    "body": "**Environment:** D365 Finance 10.0.40, Consolidation company CONSOL\n\n**Problem:**\nThe monthly consolidation from subsidiary GBSI (GBP) into CONSOL (USD) is failing with: 'The consolidation cannot be completed because the currency translation adjustment account is not specified.'\n\n**Setup:**\n- Source company: GBSI (functional currency GBP)\n- Target company: CONSOL (USD)\n- Exchange rate type: AVERAGE\n\n**What was tried:**\n- Checked consolidation setup — exchange rate types are set\n- Verified the CTA account is set in the source company ledger setup — it is missing\n- Adding the CTA account to GBSI's ledger setup resolved the run but the consolidation difference is USD 234,000 which seems too high",
+    "url": "https://community.dynamics.com/forums/thread/consolidation-cta-account-not-specified",
+    "source": "community"
+  },
+  {
+    "number": 1027,
+    "title": "Purchase requisition workflow — delegation not working for vacation coverage",
+    "body": "**Environment:** D365 Finance 10.0.38\n\n**Problem:**\nUser Sarah Johnson has delegated her workflow approvals to Mark Davis for the period 08-Jul to 22-Jul-2024 (annual leave). Purchase requisitions are still being routed to Sarah's worklist and not to Mark's.\n\n**What was tried:**\n- Verified the delegation setup in Sarah's user options — correct dates and delegate user\n- Checked Mark Davis has the required security role — he does\n- Submitted a test requisition — still goes to Sarah\n- Reconfigured the delegation — same result\n- Checked workflow version — it is using an older version that may not support delegation",
+    "url": "https://community.dynamics.com/forums/thread/purchase-requisition-delegation-not-working",
+    "source": "community"
+  },
+  {
+    "number": 1028,
+    "title": "General ledger account structure — new account cannot be created, combination blocked",
+    "body": "**Environment:** D365 Finance 10.0.41\n\n**Problem:**\nThe accounting team is trying to create a new GL account 610050 with dimension combination CostCenter=MKT, Department=NORTH. The system returns: 'The account structure does not allow this combination. Account 610050 requires dimension CostCenter from list: ADM, FIN, OPS.'\n\n**What was tried:**\n- Checked account structure 'Operating Expenses' — CostCenter MKT is not in the allowed values list\n- Requested IT to add MKT to the allowed values — the account structure is activated and cannot be edited\n- Tried creating a new account structure version — requires management approval in the system",
+    "url": "https://community.dynamics.com/forums/thread/gl-account-structure-dimension-blocked",
+    "source": "community"
+  },
+  {
+    "number": 1029,
+    "title": "Inventory closing fails — open transactions preventing close",
+    "body": "**Environment:** D365 Finance / Supply Chain 10.0.39\n\n**Problem:**\nThe June 2024 inventory close is failing with: 'Inventory close cannot be completed. There are 23 open inventory transactions that must be resolved before closing.'\n\n**Error details:**\n- 23 transactions in 'Deducted' status (should be 'Settled')\n- All 23 are from production orders in legal entity USMF\n- Transaction dates: 25-Jun to 30-Jun-2024\n\n**Impact:** Cannot close June inventory, July costs will be incorrect.\n\n**What was tried:**\n- Reviewed open transactions — all from production orders that have not been ended\n- Attempted to end the production orders — 18 succeed, 5 fail with 'Item has no cost defined'\n- The 5 items are new products set up in June with no active cost",
+    "url": "https://community.dynamics.com/forums/thread/inventory-close-fails-open-transactions",
+    "source": "community"
+  },
+  {
+    "number": 1030,
+    "title": "Electronic reporting — SEPA credit transfer file format incorrect",
+    "body": "**Environment:** D365 Finance 10.0.40, Legal entity DEMF (Germany)\n\n**Problem:**\nThe SEPA credit transfer file generated for July 2024 vendor payments is being rejected by the bank with: 'Invalid XML format — element CtrlSum does not match sum of individual amounts.'\n\n**File details:**\n- Payment count: 89 payments\n- CtrlSum in file header: EUR 1,245,678.90\n- Sum of individual PaymentInstructionAmount elements: EUR 1,245,578.90 (difference: EUR 100.00)\n\n**What was tried:**\n- Re-generated the file — same discrepancy\n- Checked the GER configuration version — running version 89.33 (latest)\n- Found 1 payment with an amount of EUR 0.00 that is included in CtrlSum but excluded from payment lines",
+    "url": "https://community.dynamics.com/forums/thread/sepa-credit-transfer-ctrlsum-mismatch",
+    "source": "community"
+  },
+  {
+    "number": 1031,
+    "title": "Project accounting — costs not flowing to project from purchase order",
+    "body": "**Environment:** D365 Finance 10.0.41, Project module\n\n**Problem:**\nA purchase order PO-PROJ-00123 with project reference PRJ-2024-045 is not posting costs to the project when the product receipt is confirmed. The PO line shows the project number but the project ledger shows no cost transactions.\n\n**PO details:**\n- Project: PRJ-2024-045\n- Item: Service (non-stocked)\n- Category: CONSULTANCY\n- Amount: USD 25,000\n\n**What was tried:**\n- Verified project is 'In Process' status — confirmed\n- Checked the project contract — active and funded\n- Verified posting profile for project costs — account 600100 assigned\n- Checked the product receipt posting — no errors, journal is posted",
+    "url": "https://community.dynamics.com/forums/thread/project-costs-not-flowing-from-purchase-order",
+    "source": "community"
+  },
+  {
+    "number": 1032,
+    "title": "Vendor invoice automation — invoices not being auto-matched to PO",
+    "body": "**Environment:** D365 Finance 10.0.40\n\n**Problem:**\nThe vendor invoice automation process that was configured last month is no longer auto-matching imported vendor invoices to purchase orders. Invoices are importing successfully but staying in the 'Pending' queue without being matched.\n\n**Setup:**\n- Invoice automation: Enabled\n- Matching policy: Two-way match\n- Last successful auto-match: 25-Jun-2024\n\n**What was tried:**\n- Checked the invoice automation log — shows 'Matching criteria not met' for all invoices since 26-Jun\n- Verified vendor invoices have the correct PO numbers in the reference field\n- Checked if a setup change was made — the 'Require PO number on invoice' option was changed to 'Mandatory' on 26-Jun which is blocking the match",
+    "url": "https://community.dynamics.com/forums/thread/vendor-invoice-automation-not-auto-matching",
+    "source": "community"
+  },
+  {
+    "number": 1033,
+    "title": "Cost accounting — allocation rules not distributing overhead correctly",
+    "body": "**Environment:** D365 Finance 10.0.39, Cost accounting module\n\n**Problem:**\nThe overhead allocation rule for cost object CC-OVERHEAD is distributing 100% of costs to a single cost centre (CC-PROD-01) instead of distributing across all 6 production cost centres proportionally.\n\n**Allocation details:**\n- Source: CC-OVERHEAD\n- Allocation basis: Direct costs (should distribute proportionally)\n- Expected: 6 cost centres receiving proportional share\n- Actual: CC-PROD-01 receives 100%\n\n**What was tried:**\n- Checked the allocation policy — allocation basis is set to 'Direct costs'\n- Verified all 6 cost centres have direct costs in the period — only CC-PROD-01 has costs this month (others are new and have no transactions yet)",
+    "url": "https://community.dynamics.com/forums/thread/cost-accounting-allocation-single-cost-centre",
+    "source": "community"
+  },
+  {
+    "number": 1034,
+    "title": "Asset leasing — right-of-use asset not being created on lease commencement",
+    "body": "**Environment:** D365 Finance 10.0.41 (ASC 842 / IFRS 16 module)\n\n**Problem:**\nA new lease LAE-000234 (office space, IFRS 16) was commenced on 01-Jul-2024. The system should have automatically created a right-of-use (ROU) asset and lease liability, but no entries were made.\n\n**Lease details:**\n- Commencement date: 01-Jul-2024\n- Monthly payment: GBP 8,500\n- Lease term: 36 months\n- Incremental borrowing rate: 4.5%\n- Present value calculated: GBP 287,400\n\n**What was tried:**\n- Checked lease status — shows 'Open' (should be 'Commenced')\n- Found that the 'Create journal' step in the lease commencement checklist was not run\n- Running it manually now shows: 'Posting layer 'Current' does not allow lease entries — must use layer IFRS'",
+    "url": "https://community.dynamics.com/forums/thread/asset-leasing-rou-not-created-commencement",
+    "source": "community"
+  },
+  {
+    "number": 1035,
+    "title": "Global address book — duplicate vendor account created during import",
+    "body": "**Environment:** D365 Finance 10.0.38\n\n**Problem:**\nA data migration import created 45 duplicate vendor accounts in the Global Address Book. The duplicates have different account numbers but identical names, addresses, and tax registration numbers. This is causing payment runs to split across both accounts.\n\n**Example:**\n- V-000456: Acme Supplies GmbH (original)\n- V-000789: Acme Supplies GmbH (duplicate, created by import)\n\n**Impact:** 12 vendor payments totalling EUR 234,000 posted to duplicate accounts.\n\n**What was tried:**\n- Identified all 45 pairs of duplicates\n- Cannot merge accounts — the Merge feature requires no open transactions on the duplicate\n- 8 of the 45 duplicates have open invoices that must be re-assigned before merge",
+    "url": "https://community.dynamics.com/forums/thread/global-address-book-duplicate-vendor-import",
+    "source": "community"
+  },
+  {
+    "number": 1036,
+    "title": "Electronic bank statement import — file format rejected by import framework",
+    "body": "**Environment:** D365 Finance 10.0.40\n\n**Problem:**\nThe bank statement file from Citibank (BAI2 format) for July 2024 is being rejected by the bank statement import framework with: 'Unrecognised file format. The file does not match any configured bank statement format.'\n\n**File details:**\n- Format: BAI2\n- File size: 234 KB\n- Previous month: Imported successfully\n- Bank contact: Confirmed no format change\n\n**What was tried:**\n- Compared July file to June file — structure looks identical\n- Tried importing using the 'Override format check' option — still fails\n- Found that the BAI2 import format configuration was updated on 01-Jul and the header record type code was changed from '01' to '001' (extra leading zero)",
+    "url": "https://community.dynamics.com/forums/thread/bank-statement-import-format-rejected",
+    "source": "community"
+  },
+  {
+    "number": 1037,
+    "title": "Accounts payable — payment journal posting fails with dimension error",
+    "body": "**Environment:** D365 Finance 10.0.39\n\n**Problem:**\nA vendor payment journal APJ-00789 containing 34 payments fails to post with: 'Financial dimension BusinessUnit is required for account type Vendor but is missing on line 12.'\n\n**What was tried:**\n- Checked line 12 — vendor V-000234, amount USD 15,600\n- The vendor's default financial dimension does not have BusinessUnit set\n- Other payments in the same journal (lines 1-11 and 13-34) all have BusinessUnit from the payment method default\n- Line 12 was manually entered (not from payment proposal) — the manual entry did not inherit dimensions\n- Added BusinessUnit=CORP to line 12 — journal now posts successfully",
+    "url": "https://community.dynamics.com/forums/thread/payment-journal-dimension-error-line",
+    "source": "community"
+  },
+  {
+    "number": 1038,
+    "title": "Prepayment invoice not being reversed after final invoice is posted",
+    "body": "**Environment:** D365 Finance 10.0.41\n\n**Problem:**\nA prepayment of USD 10,000 was posted to vendor V-000567 in May 2024. The final invoice of USD 35,000 was posted in July 2024 and was linked to the prepayment. The prepayment reversal journal was not automatically created and the prepayment liability still shows on the balance sheet.\n\n**What was tried:**\n- Verified the final invoice is linked to the prepayment — the link shows in the vendor transactions form\n- Checked the Accounts Payable parameters — 'Automatically reverse prepayment' is not enabled\n- The prepayment reversal must be created manually using the 'Reverse' button on the prepayment journal — this step was missed by the AP team",
+    "url": "https://community.dynamics.com/forums/thread/prepayment-not-reversed-after-final-invoice",
+    "source": "community"
+  },
+  {
+    "number": 1039,
+    "title": "Inventory valuation report — FIFO cost layers showing incorrect unit cost",
+    "body": "**Environment:** D365 Finance / Supply Chain 10.0.38\n\n**Problem:**\nThe inventory valuation report for item C0001 in warehouse 11 shows a unit cost of USD 45.00, but the last purchase receipt (posted 28-Jun-2024) was at USD 52.00. The FIFO cost layer is not reflecting the most recent receipt.\n\n**Item costing setup:**\n- Costing method: FIFO\n- Item group: COMPONENTS\n\n**What was tried:**\n- Ran inventory recalculation — cost layers remain at USD 45.00\n- Ran inventory close for June — this is where the issue was identified\n- Checked the purchase receipt posting — unit cost shows USD 52.00 in the receipt transaction\n- Found that the inventory close for May was not run — the FIFO layers from May were never settled",
+    "url": "https://community.dynamics.com/forums/thread/inventory-fifo-unit-cost-incorrect",
+    "source": "community"
+  },
+  {
+    "number": 1040,
+    "title": "Sales tax settlement process fails — rounding difference greater than tolerance",
+    "body": "**Environment:** D365 Finance 10.0.40, Legal entity DEMF\n\n**Problem:**\nThe VAT settlement process for June 2024 fails at the posting step with: 'Rounding difference EUR 0.03 exceeds the maximum allowed tolerance of EUR 0.01 for tax authority DE-FINANZAMT.'\n\n**Settlement details:**\n- Tax authority: DE-FINANZAMT\n- Period: June 2024\n- Total VAT: EUR 234,567.89\n- Rounding difference: EUR 0.03\n\n**What was tried:**\n- Increased the tolerance to EUR 0.05 in tax authority setup — settlement completed\n- However, the finance manager has flagged that increasing tolerance may not be compliant with German tax authority requirements\n- Investigating whether the rounding difference is caused by a multi-currency invoice posted in the period",
+    "url": "https://community.dynamics.com/forums/thread/sales-tax-settlement-rounding-tolerance",
+    "source": "community"
+  }
+]
