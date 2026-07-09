@@ -49,7 +49,7 @@ _RAW = [
      "inventory transactions. Post an inventory adjustment journal with a positive quantity to correct "
      "the balance, then investigate the root cause transaction using inventory transaction history.",
      "Inventory / on-hand", 29, 24, 8.4),
-]
+    # ── Kubernetes / Karpenter KB articles ───────────────────────────────────
     ("NodePool quota exhausted — capacity grace period and manual drain procedure",
      "https://karpenter.sh/docs/concepts/nodepools/",
      "When a NodePool's instance-type/capacity quota is exhausted, Karpenter can't "
