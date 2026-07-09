@@ -34,6 +34,9 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv()
+
 from app.orchestrator.dataverse import DataverseClient, available  # noqa: E402
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
@@ -253,7 +256,7 @@ def fetch_issues(limit: int) -> list[dict]:
 
 
 def main(argv: list[str]) -> int:
-    limit = int(argv[1]) if len(argv) > 1 else 40
+    limit = int(argv[1]) if len(argv) > 1 else 200
 
     if not available():
         print("Dataverse env not set (DATAVERSE_URL / AZURE_*). Aborting.")
