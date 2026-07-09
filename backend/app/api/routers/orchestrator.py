@@ -23,6 +23,8 @@ from app.orchestrator import Orchestrator, OrchestrationRecord
 from app.orchestrator.agents import default_agents
 from app.orchestrator.audit import AuditLogger
 from app.orchestrator.db_sink import postgres_audit_sink
+from app.orchestrator.finance_ai import answer_finance_question
+from app.orchestrator.finance_odata import available as finance_available
 
 router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 
@@ -1101,4 +1103,42 @@ def check_escalations(x_webhook_secret: Optional[str] = Header(default=None)):
         "escalated": escalated,
         "skipped_count": len(skipped),
         "errors": errors,
+    }
+
+
+# ── Finance AI Query ──────────────────────────────────────────────────────────
+
+@router.get("/finance-query")
+def finance_query(question: str):
+    """
+    Answer a natural language question about live D365 Finance data.
+
+    Fetches the relevant Finance entity (vendor invoices, GL journals,
+    fiscal periods, fixed assets, inventory, batch jobs, customer invoices)
+    and passes the data to the AI to answer the question.
+
+    Example questions:
+      - "Show me pending vendor invoices"
+      - "Are there any unbalanced GL journals?"
+      - "Which fiscal periods are closed?"
+      - "Is there any negative inventory?"
+      - "Which batch jobs failed recently?"
+    """
+    if not question or not question.strip():
+        raise HTTPException(status_code=400, detail="question parameter is required")
+    return answer_finance_question(question.strip())
+
+
+@router.get("/finance-status")
+def finance_status():
+    """Check whether the D365 Finance OData connection is configured."""
+    from app.orchestrator.llm import llm_available
+    return {
+        "finance_connected": finance_available(),
+        "llm_available":     llm_available(),
+        "message": (
+            "D365 Finance OData is connected and ready."
+            if finance_available()
+            else "Add FINANCE_URL to environment variables to connect D365 Finance data."
+        ),
     }
